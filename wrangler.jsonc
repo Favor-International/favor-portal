@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "favor-portal",
+  "account_id": "b77dd28c052fd0722bebce71cb98aa6e",
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-03-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -9,11 +10,11 @@
     "directory": ".open-next/assets"
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "favor-portal", "database_id": "PLACEHOLDER_SET_IN_TASK_3" }
+    { "binding": "DB", "database_name": "favor-portal", "database_id": "d783ef09-a0c0-46f4-b4f8-4ec60450d21f" }
   ],
   "kv_namespaces": [
-    { "binding": "SESSIONS", "id": "PLACEHOLDER_SET_IN_TASK_3" },
-    { "binding": "RATE_LIMIT", "id": "PLACEHOLDER_SET_IN_TASK_3" }
+    { "binding": "SESSIONS", "id": "28d6630f10a54afaa923434eae0d02de" },
+    { "binding": "RATE_LIMIT", "id": "9e4ad0a8aec245beb85bc628ea5b5290" }
   ],
   "r2_buckets": [
     { "binding": "R2", "bucket_name": "favor-portal-assets" }
