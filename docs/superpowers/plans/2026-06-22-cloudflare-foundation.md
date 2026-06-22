@@ -21,11 +21,18 @@
 
 - [ ] **Step 1: Install dependencies**
 
-Run:
+> **Version note (resolved during execution):** `@opennextjs/cloudflare@1.19.11` peers
+> `next ">=15.5.18 <16 || >=16.2.6"` and `wrangler "^4.86.0"`. The repo's `next@16.1.6` falls in the
+> unsupported gap, so Next is bumped to **16.2.9** (latest stable; React 19.2.3 stays compatible) and
+> `eslint-config-next` to **16.2.9**. This is the spec §14 mitigation ("pin compatible versions") and
+> also covers the Next-16 Proxy fix landed at 16.2.6.
+
+Run (Next/eslint pinned exact to match repo style; the bump also bootstraps all deps on a fresh clone):
 ```bash
+npm install --save-exact next@16.2.9 eslint-config-next@16.2.9
 npm install --save-dev @opennextjs/cloudflare@latest wrangler@latest
 ```
-Expected: both packages added to `devDependencies`; no peer-dependency errors that abort install.
+Expected: OpenNext + Wrangler added to `devDependencies`; no `ERESOLVE` peer error.
 
 - [ ] **Step 2: Verify versions resolved**
 
