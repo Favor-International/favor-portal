@@ -1,21 +1,5 @@
 import type { NextRequest } from "next/server";
-
-type RateLimitState = {
-  count: number;
-  resetAt: number;
-};
-
-type RateLimitStore = Map<string, RateLimitState>;
-
-declare global {
-  var __favorRateLimitStore: RateLimitStore | undefined;
-}
-
-const rateLimitStore: RateLimitStore = globalThis.__favorRateLimitStore ?? new Map();
-
-if (!globalThis.__favorRateLimitStore) {
-  globalThis.__favorRateLimitStore = rateLimitStore;
-}
+import type { KVNamespace } from "@cloudflare/workers-types";
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -24,61 +8,47 @@ export type RateLimitResult = {
   limit: number;
 };
 
-function cleanupExpiredEntries(now: number) {
-  // Keep in-memory storage bounded for long-running server processes.
-  if (rateLimitStore.size < 1000) return;
-  for (const [key, state] of rateLimitStore.entries()) {
-    if (state.resetAt <= now) {
-      rateLimitStore.delete(key);
-    }
-  }
-}
+type State = { count: number; resetAt: number };
 
-export function checkRateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
-  const now = Date.now();
-  cleanupExpiredEntries(now);
+// KV-backed fixed-window rate limit. `now` is injectable for tests.
+export async function checkRateLimit(
+  kv: KVNamespace,
+  key: string,
+  limit: number,
+  windowMs: number,
+  now: number = Date.now(),
+): Promise<RateLimitResult> {
+  const k = "rl:" + key;
+  const raw = await kv.get(k);
+  const state: State | null = raw ? (JSON.parse(raw) as State) : null;
 
-  const current = rateLimitStore.get(key);
-
-  if (!current || current.resetAt <= now) {
-    rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-    return {
-      allowed: true,
-      remaining: Math.max(limit - 1, 0),
-      retryAfterSeconds: 0,
-      limit,
-    };
+  if (!state || state.resetAt <= now) {
+    const next: State = { count: 1, resetAt: now + windowMs };
+    await kv.put(k, JSON.stringify(next), { expirationTtl: Math.ceil(windowMs / 1000) });
+    return { allowed: true, remaining: Math.max(limit - 1, 0), retryAfterSeconds: 0, limit };
   }
 
-  if (current.count >= limit) {
+  if (state.count >= limit) {
     return {
       allowed: false,
       remaining: 0,
-      retryAfterSeconds: Math.max(Math.ceil((current.resetAt - now) / 1000), 1),
+      retryAfterSeconds: Math.max(Math.ceil((state.resetAt - now) / 1000), 1),
       limit,
     };
   }
 
-  current.count += 1;
-  rateLimitStore.set(key, current);
-
-  return {
-    allowed: true,
-    remaining: Math.max(limit - current.count, 0),
-    retryAfterSeconds: 0,
-    limit,
-  };
+  state.count += 1;
+  await kv.put(k, JSON.stringify(state), {
+    expirationTtl: Math.max(Math.ceil((state.resetAt - now) / 1000), 1),
+  });
+  return { allowed: true, remaining: Math.max(limit - state.count, 0), retryAfterSeconds: 0, limit };
 }
 
 export function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
+  const fwd = request.headers.get("x-forwarded-for");
+  if (fwd) {
+    const first = fwd.split(",")[0]?.trim();
     if (first) return first;
   }
-
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) return realIp;
-
-  return "unknown";
+  return request.headers.get("x-real-ip") ?? "unknown";
 }
