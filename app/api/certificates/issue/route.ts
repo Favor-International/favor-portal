@@ -2,8 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { and, eq, inArray } from "drizzle-orm";
-// TODO(Plan 5): replace Supabase Storage with R2
-import { createClient } from "@/lib/supabase/server";
+import { putR2Object, r2PublicPath } from "@/lib/storage/r2";
 import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { issueCertificate } from "@/lib/db/access/learning";
@@ -17,7 +16,6 @@ import {
 
 export const runtime = "nodejs";
 
-const CERTIFICATES_BUCKET = process.env.SUPABASE_CERTIFICATES_BUCKET || "lms-certificates";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
 interface IssueCertificateBody {
@@ -243,26 +241,9 @@ export async function POST(request: Request) {
       verificationUrl,
     });
 
-    // TODO(Plan 5): replace Supabase Storage with R2
-    const supabase = await createClient();
-    const filePath = `${userId}/${courseId}/${verificationToken}.pdf`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(CERTIFICATES_BUCKET)
-      .upload(filePath, pdfBytes, {
-        upsert: true,
-        contentType: "application/pdf",
-      });
-
-    let certificateUrl: string;
-    if (uploadError || !uploadData?.path) {
-      const base64 = Buffer.from(pdfBytes).toString("base64");
-      certificateUrl = `data:application/pdf;base64,${base64}`;
-    } else {
-      const { data: publicUrlData } = supabase.storage
-        .from(CERTIFICATES_BUCKET)
-        .getPublicUrl(uploadData.path);
-      certificateUrl = publicUrlData.publicUrl;
-    }
+    const key = `certificates/${certificateNumber}.pdf`;
+    await putR2Object(key, pdfBytes, "application/pdf");
+    const certificateUrl = r2PublicPath(key);
 
     await issueCertificate(db, ctx, {
       courseId,

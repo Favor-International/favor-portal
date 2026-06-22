@@ -25,6 +25,23 @@ export type NewCourse = {
 
 export type UpdateCourse = Partial<NewCourse>;
 
+export type NewModule = {
+  title: string;
+  description?: string | null;
+  cloudflareVideoId: string;
+  sortOrder?: number;
+  durationSeconds?: number;
+  moduleType?: "video" | "reading" | "quiz";
+  resourceUrl?: string | null;
+  notes?: string | null;
+  quizPayload?: Record<string, unknown> | null;
+  passThreshold?: number;
+};
+
+export type UpdateModule = Partial<Omit<NewModule, "cloudflareVideoId">> & {
+  cloudflareVideoId?: string;
+};
+
 // A course is visible to a non-admin when its access level is allowed for the
 // constituent type AND it is published, unlocked, and within its publish window.
 // Admins see everything.
@@ -129,6 +146,63 @@ export async function updateCourse(db: Db, ctx: AuthContext, id: string, input: 
 export async function deleteCourse(db: Db, ctx: AuthContext, id: string) {
   if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
   await db.delete(courses).where(eq(courses.id, id));
+}
+
+// Manage-gated list of every course (including drafts and locked/out-of-window
+// courses), bypassing constituent/visibility filtering. Backs the admin LMS
+// management page. Sorted by sortOrder to match the page's ordering.
+export async function listAllCoursesAdmin(db: Db, ctx: AuthContext) {
+  if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
+  return db.select().from(courses).orderBy(asc(courses.sortOrder)).all();
+}
+
+// Manage-gated module CRUD (lms_manager / admin).
+export async function createModule(db: Db, ctx: AuthContext, courseId: string, input: NewModule) {
+  if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
+  const now = new Date().toISOString();
+  const row = {
+    id: crypto.randomUUID(),
+    courseId,
+    title: input.title,
+    description: input.description ?? null,
+    cloudflareVideoId: input.cloudflareVideoId,
+    sortOrder: input.sortOrder ?? 0,
+    durationSeconds: input.durationSeconds ?? 0,
+    moduleType: input.moduleType ?? "video",
+    resourceUrl: input.resourceUrl ?? null,
+    notes: input.notes ?? null,
+    quizPayload: input.quizPayload ?? null,
+    passThreshold: input.passThreshold ?? 70,
+    updatedAt: now,
+  };
+  await db.insert(courseModules).values(row);
+  return row;
+}
+
+export async function updateModule(db: Db, ctx: AuthContext, id: string, input: UpdateModule) {
+  if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
+  const now = new Date().toISOString();
+  await db
+    .update(courseModules)
+    .set({
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.cloudflareVideoId !== undefined ? { cloudflareVideoId: input.cloudflareVideoId } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      ...(input.durationSeconds !== undefined ? { durationSeconds: input.durationSeconds } : {}),
+      ...(input.moduleType !== undefined ? { moduleType: input.moduleType } : {}),
+      ...(input.resourceUrl !== undefined ? { resourceUrl: input.resourceUrl } : {}),
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.quizPayload !== undefined ? { quizPayload: input.quizPayload } : {}),
+      ...(input.passThreshold !== undefined ? { passThreshold: input.passThreshold } : {}),
+      updatedAt: now,
+    })
+    .where(eq(courseModules.id, id));
+}
+
+export async function deleteModule(db: Db, ctx: AuthContext, id: string) {
+  if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
+  await db.delete(courseModules).where(eq(courseModules.id, id));
 }
 
 // Manage-gated raw read of a course together with all of its modules (sorted),

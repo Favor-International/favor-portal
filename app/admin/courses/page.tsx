@@ -2,18 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Course, CourseModule } from "@/types";
-import {
-  getMockModuleEvents,
-  getMockCourses,
-  getMockModules,
-  getMockNotes,
-  getMockProgress,
-  getMockQuizAttempts,
-  setMockCourses,
-  setMockModules,
-} from "@/lib/mock-store";
-import { createClient } from "@/lib/supabase/client";
-import { isDevBypass } from "@/lib/dev-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { hasAdminPermission } from "@/lib/admin/roles";
 import { QuizBuilder } from "@/components/admin/quiz-builder";
@@ -45,7 +33,6 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GraduationCap, PlusCircle, Pencil, Film, FileText, Upload, ImagePlus } from "lucide-react";
-import type { Json, Tables } from "@/types/database";
 
 const ACCESS_LEVELS: Course["accessLevel"][] = [
   "partner",
@@ -57,47 +44,37 @@ const ACCESS_LEVELS: Course["accessLevel"][] = [
 const STATUS: Array<NonNullable<Course["status"]>> = ["draft", "published"];
 const MODULE_TYPES: NonNullable<CourseModule["type"]>[] = ["video", "reading", "quiz"];
 
-function mapCourse(row: Tables<"courses">): Course {
-  return {
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    thumbnailUrl: row.thumbnail_url || row.cover_image || undefined,
-    accessLevel: row.access_level as Course["accessLevel"],
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
-    moduleCount: 0,
-    status: (row.status as Course["status"]) ?? "published",
-    isLocked: Boolean(row.is_locked),
-    isPaid: Boolean(row.is_paid),
-    price: Number(row.price ?? 0),
-    tags: row.tags ?? [],
-    coverImage: row.cover_image ?? "",
-    enforceSequential: row.enforce_sequential ?? true,
-    publishAt: row.publish_at ?? undefined,
-    unpublishAt: row.unpublish_at ?? undefined,
-  };
-}
+// Aggregate analytics rows returned by GET /api/admin/courses (camelCase, sourced
+// from learning.getLmsAnalyticsData).
+type ProgressRow = {
+  userId: string;
+  moduleId: string;
+  completed: boolean | null;
+  watchTimeSeconds: number | null;
+  completedAt: string | null;
+  lastWatchedAt: string | null;
+};
+type QuizAttemptRow = { moduleId: string; scorePercent: number; passed: boolean };
+type ModuleEventRow = {
+  moduleId: string;
+  eventType: string;
+  userId: string;
+  watchTimeSeconds: number;
+  createdAt: string | null;
+};
+type CertificateRow = { courseId: string; userId: string; issuedAt: string | null };
 
-function mapModule(row: Tables<"course_modules">): CourseModule {
-  return {
-    id: row.id,
-    courseId: row.course_id,
-    title: row.title,
-    description: row.description ?? "",
-    cloudflareVideoId: row.cloudflare_video_id,
-    sortOrder: row.sort_order,
-    durationSeconds: row.duration_seconds,
-    type: (row.module_type as CourseModule["type"]) ?? "video",
-    resourceUrl: row.resource_url ?? "",
-    notes: row.notes ?? "",
-    passThreshold: row.pass_threshold ?? 70,
-    quizPayload: row.quiz_payload ?? undefined,
-  };
-}
+type CoursesPayload = {
+  courses: Course[];
+  modules: CourseModule[];
+  progress: ProgressRow[];
+  quizAttempts: QuizAttemptRow[];
+  events: ModuleEventRow[];
+  certificates: CertificateRow[];
+  notesCount: number;
+};
 
 export default function AdminCoursesPage() {
-  const supabase = useMemo(() => createClient(), []);
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [modules, setModules] = useState<CourseModule[]>([]);
@@ -123,11 +100,11 @@ export default function AdminCoursesPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [progressRows, setProgressRows] = useState<Tables<"user_course_progress">[]>([]);
-  const [notesRows, setNotesRows] = useState<Tables<"user_course_notes">[]>([]);
-  const [certificateRows, setCertificateRows] = useState<Tables<"user_course_certificates">[]>([]);
-  const [quizAttemptRows, setQuizAttemptRows] = useState<Tables<"user_quiz_attempts">[]>([]);
-  const [moduleEventRows, setModuleEventRows] = useState<Tables<"course_module_events">[]>([]);
+  const [progressRows, setProgressRows] = useState<ProgressRow[]>([]);
+  const [notesCount, setNotesCount] = useState(0);
+  const [certificateRows, setCertificateRows] = useState<CertificateRow[]>([]);
+  const [quizAttemptRows, setQuizAttemptRows] = useState<QuizAttemptRow[]>([]);
+  const [moduleEventRows, setModuleEventRows] = useState<ModuleEventRow[]>([]);
   const [workspaceTab, setWorkspaceTab] = useState<"courses" | "community" | "analytics">(
     "courses"
   );
@@ -137,158 +114,25 @@ export default function AdminCoursesPage() {
 
   const loadData = useCallback(async () => {
     setErrorMessage(null);
-    if (isDevBypass) {
-      const mockCourses = getMockCourses();
-      const mockModules = getMockModules();
-      setCourses(mockCourses);
-      setModules(mockModules);
-
-      const mockProgressRows: Tables<"user_course_progress">[] = getMockProgress().map((row) => ({
-        id: row.id,
-        user_id: row.userId,
-        module_id: row.moduleId,
-        completed: row.completed,
-        completed_at: row.completedAt ?? null,
-        watch_time_seconds: row.watchTimeSeconds,
-        last_watched_at: row.lastWatchedAt ?? null,
-      }));
-      const mockNoteRows: Tables<"user_course_notes">[] = getMockNotes().map((row) => ({
-        id: row.id,
-        user_id: row.userId,
-        module_id: row.moduleId,
-        content: row.content,
-        created_at: row.updatedAt,
-        updated_at: row.updatedAt,
-      }));
-      const courseModulesMap = mockModules.reduce<Record<string, string[]>>((acc, module) => {
-        acc[module.courseId] = acc[module.courseId] || [];
-        acc[module.courseId].push(module.id);
-        return acc;
-      }, {});
-      const completionByUserCourse = new Map<string, Set<string>>();
-      for (const row of mockProgressRows) {
-        if (!row.completed) continue;
-        const moduleEntry = mockModules.find((entry) => entry.id === row.module_id);
-        if (!moduleEntry) continue;
-        const key = `${row.user_id}:${moduleEntry.courseId}`;
-        const set = completionByUserCourse.get(key) ?? new Set<string>();
-        set.add(row.module_id);
-        completionByUserCourse.set(key, set);
+    try {
+      const response = await fetch("/api/admin/courses", { cache: "no-store" });
+      if (!response.ok) {
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        setErrorMessage(json.error || "Failed to load courses");
+        return;
       }
-      const mockCertificates: Tables<"user_course_certificates">[] = [];
-      completionByUserCourse.forEach((completedSet, key) => {
-        const [userId, courseId] = key.split(":");
-        const requiredModules = courseModulesMap[courseId] ?? [];
-        if (requiredModules.length === 0) return;
-        const completedAll = requiredModules.every((moduleId) => completedSet.has(moduleId));
-        if (!completedAll) return;
-        mockCertificates.push({
-          id: `cert-${userId}-${courseId}`,
-          user_id: userId,
-          course_id: courseId,
-          completion_rate: 100,
-          issued_at: new Date().toISOString(),
-          certificate_url: null,
-          verification_token: null,
-          certificate_number: null,
-          metadata: {},
-        });
-      });
-
-      setProgressRows(mockProgressRows);
-      setNotesRows(mockNoteRows);
-      setCertificateRows(mockCertificates);
-      setQuizAttemptRows(
-        getMockQuizAttempts().map((row) => ({
-          id: row.id,
-          user_id: row.userId,
-          course_id: row.courseId,
-          module_id: row.moduleId,
-          attempt_number: row.attemptNumber,
-          score_percent: row.scorePercent,
-          correct_answers: row.correctAnswers,
-          total_questions: row.totalQuestions,
-          passed: row.passed,
-          answers: row.answers,
-          question_order: row.questionOrder,
-          option_order: row.optionOrder,
-          started_at: row.startedAt,
-          submitted_at: row.submittedAt,
-          duration_seconds: row.durationSeconds,
-          metadata: row.metadata ?? {},
-        }))
-      );
-      setModuleEventRows(
-        getMockModuleEvents().map((row) => ({
-          id: row.id,
-          user_id: row.userId,
-          course_id: row.courseId,
-          module_id: row.moduleId,
-          event_type: row.eventType,
-          watch_time_seconds: row.watchTimeSeconds,
-          metadata: row.metadata ?? {},
-          created_at: row.createdAt,
-        }))
-      );
-      return;
+      const data = (await response.json()) as CoursesPayload;
+      setCourses(data.courses ?? []);
+      setModules(data.modules ?? []);
+      setProgressRows(data.progress ?? []);
+      setNotesCount(data.notesCount ?? 0);
+      setCertificateRows(data.certificates ?? []);
+      setQuizAttemptRows(data.quizAttempts ?? []);
+      setModuleEventRows(data.events ?? []);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to load courses");
     }
-
-    const [
-      coursesResult,
-      modulesResult,
-      progressResult,
-      notesResult,
-      certificatesResult,
-      attemptsResult,
-      eventsResult,
-    ] = await Promise.all([
-      supabase.from("courses").select("*").order("sort_order", { ascending: true }),
-      supabase.from("course_modules").select("*").order("sort_order", { ascending: true }),
-      supabase.from("user_course_progress").select("*"),
-      supabase.from("user_course_notes").select("*"),
-      supabase.from("user_course_certificates").select("*"),
-      supabase.from("user_quiz_attempts").select("*"),
-      supabase.from("course_module_events").select("*"),
-    ]);
-
-    if (coursesResult.error) {
-      setErrorMessage(coursesResult.error.message);
-      return;
-    }
-
-    if (modulesResult.error) {
-      setErrorMessage(modulesResult.error.message);
-      return;
-    }
-    if (progressResult.error) {
-      setErrorMessage(progressResult.error.message);
-      return;
-    }
-    if (notesResult.error) {
-      setErrorMessage(notesResult.error.message);
-      return;
-    }
-    if (certificatesResult.error) {
-      setErrorMessage(certificatesResult.error.message);
-      return;
-    }
-    if (attemptsResult.error) {
-      setErrorMessage(attemptsResult.error.message);
-      return;
-    }
-    if (eventsResult.error) {
-      setErrorMessage(eventsResult.error.message);
-      return;
-    }
-
-    setCourses((coursesResult.data ?? []).map(mapCourse));
-    setModules((modulesResult.data ?? []).map(mapModule));
-    setProgressRows(progressResult.data ?? []);
-    setNotesRows(notesResult.data ?? []);
-    setCertificateRows(certificatesResult.data ?? []);
-    setQuizAttemptRows(attemptsResult.data ?? []);
-    setModuleEventRows(eventsResult.data ?? []);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void loadData();
@@ -303,20 +147,20 @@ export default function AdminCoursesPage() {
   }, [modules]);
 
   const lmsAnalytics = useMemo(() => {
-    const activeLearners = new Set(progressRows.map((row) => row.user_id)).size;
+    const activeLearners = new Set(progressRows.map((row) => row.userId)).size;
     const completedRows = progressRows.filter((row) => row.completed);
-    const totalWatchSeconds = progressRows.reduce((sum, row) => sum + row.watch_time_seconds, 0);
+    const totalWatchSeconds = progressRows.reduce((sum, row) => sum + (row.watchTimeSeconds ?? 0), 0);
     const avgWatchMinutes =
       progressRows.length > 0 ? Math.round(totalWatchSeconds / progressRows.length / 60) : 0;
     const certificatesIssued = certificateRows.length;
 
     const firstSeenByUser = new Map<string, string>();
     for (const row of progressRows) {
-      const timestamp = row.completed_at ?? row.last_watched_at;
+      const timestamp = row.completedAt ?? row.lastWatchedAt;
       if (!timestamp) continue;
-      const existing = firstSeenByUser.get(row.user_id);
+      const existing = firstSeenByUser.get(row.userId);
       if (!existing || timestamp < existing) {
-        firstSeenByUser.set(row.user_id, timestamp);
+        firstSeenByUser.set(row.userId, timestamp);
       }
     }
     const cohortMap = new Map<string, { learners: Set<string>; completions: number }>();
@@ -327,8 +171,8 @@ export default function AdminCoursesPage() {
       cohortMap.set(cohort, entry);
     });
     for (const row of progressRows) {
-      if (!row.completed || !row.completed_at) continue;
-      const cohort = row.completed_at.slice(0, 7);
+      if (!row.completed || !row.completedAt) continue;
+      const cohort = row.completedAt.slice(0, 7);
       const entry = cohortMap.get(cohort) ?? { learners: new Set<string>(), completions: 0 };
       entry.completions += 1;
       cohortMap.set(cohort, entry);
@@ -344,17 +188,17 @@ export default function AdminCoursesPage() {
 
     const moduleEngagement = modules
       .map((module) => {
-        const progressForModule = progressRows.filter((row) => row.module_id === module.id);
+        const progressForModule = progressRows.filter((row) => row.moduleId === module.id);
         const eventUsers = moduleEventRows
-          .filter((event) => event.module_id === module.id)
-          .map((event) => event.user_id);
-        const started = new Set([...progressForModule.map((row) => row.user_id), ...eventUsers]).size;
+          .filter((event) => event.moduleId === module.id)
+          .map((event) => event.userId);
+        const started = new Set([...progressForModule.map((row) => row.userId), ...eventUsers]).size;
         const completed = progressForModule.filter((row) => row.completed).length;
         const completionRate = started > 0 ? Math.round((completed / started) * 100) : 0;
         const avgWatchSeconds =
           progressForModule.length > 0
             ? Math.round(
-                progressForModule.reduce((sum, row) => sum + row.watch_time_seconds, 0) /
+                progressForModule.reduce((sum, row) => sum + (row.watchTimeSeconds ?? 0), 0) /
                   progressForModule.length
               )
             : 0;
@@ -379,13 +223,13 @@ export default function AdminCoursesPage() {
     const quizPerformance = modules
       .filter((module) => module.type === "quiz")
       .map((module) => {
-        const attempts = quizAttemptRows.filter((row) => row.module_id === module.id);
+        const attempts = quizAttemptRows.filter((row) => row.moduleId === module.id);
         const passed = attempts.filter((attempt) => attempt.passed).length;
         const passRate = attempts.length > 0 ? Math.round((passed / attempts.length) * 100) : 0;
         const averageScore =
           attempts.length > 0
             ? Math.round(
-                attempts.reduce((sum, attempt) => sum + attempt.score_percent, 0) /
+                attempts.reduce((sum, attempt) => sum + attempt.scorePercent, 0) /
                   attempts.length
               )
             : 0;
@@ -402,8 +246,8 @@ export default function AdminCoursesPage() {
 
     const watchBehavior = modules
       .map((module) => {
-        const events = moduleEventRows.filter((event) => event.module_id === module.id);
-        const totalWatch = events.reduce((sum, event) => sum + event.watch_time_seconds, 0);
+        const events = moduleEventRows.filter((event) => event.moduleId === module.id);
+        const totalWatch = events.reduce((sum, event) => sum + event.watchTimeSeconds, 0);
         const avgWatch = events.length > 0 ? Math.round(totalWatch / events.length) : 0;
         return {
           moduleId: module.id,
@@ -419,12 +263,12 @@ export default function AdminCoursesPage() {
     const topCourses = courses
       .map((course) => {
         const moduleIds = (modulesByCourse[course.id] ?? []).map((module) => module.id);
-        const courseRows = progressRows.filter((row) => moduleIds.includes(row.module_id));
-        const uniqueLearners = new Set(courseRows.map((row) => row.user_id)).size;
+        const courseRows = progressRows.filter((row) => moduleIds.includes(row.moduleId));
+        const uniqueLearners = new Set(courseRows.map((row) => row.userId)).size;
         const completedModules = courseRows.filter((row) => row.completed).length;
         const denominator = uniqueLearners * Math.max(moduleIds.length, 1);
         const completionRate = denominator > 0 ? Math.round((completedModules / denominator) * 100) : 0;
-        const certs = certificateRows.filter((row) => row.course_id === course.id).length;
+        const certs = certificateRows.filter((row) => row.courseId === course.id).length;
         return {
           id: course.id,
           title: course.title,
@@ -439,7 +283,7 @@ export default function AdminCoursesPage() {
     return {
       activeLearners,
       completedRows: completedRows.length,
-      notesCount: notesRows.length,
+      notesCount,
       avgWatchMinutes,
       certificatesIssued,
       topCourses,
@@ -454,7 +298,7 @@ export default function AdminCoursesPage() {
     moduleEventRows,
     modules,
     modulesByCourse,
-    notesRows.length,
+    notesCount,
     progressRows,
     quizAttemptRows,
   ]);
@@ -614,19 +458,7 @@ export default function AdminCoursesPage() {
     return date.toISOString();
   }
 
-  async function logLmsAudit(action: string, entityType: string, entityId: string, details: Json) {
-    if (isDevBypass || !user?.id) return;
-    await supabase.from("admin_audit_logs").insert({
-      actor_user_id: user.id,
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      details,
-    });
-  }
-
   async function createCourseSnapshot(courseId: string, published: boolean, reason: string) {
-    if (isDevBypass) return;
     const response = await fetch("/api/admin/lms/version", {
       method: "POST",
       headers: {
@@ -655,72 +487,50 @@ export default function AdminCoursesPage() {
     setErrorMessage(null);
     let savedCourseId: string | null = null;
 
-    if (isDevBypass) {
-      const course: Course = {
-        id: `course-${Date.now()}`,
+    const response = await fetch("/api/admin/courses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         title: newCourse.title,
         description: newCourse.description,
         accessLevel: newCourse.accessLevel ?? "partner",
         sortOrder: courses.length + 1,
-        createdAt: new Date().toISOString(),
-        moduleCount: 0,
         status: newCourse.status ?? "draft",
         isLocked: newCourse.isLocked ?? false,
         isPaid: newCourse.isPaid ?? false,
         price: newCourse.isPaid ? newCourse.price ?? 0 : 0,
         tags: newCourse.tags ?? [],
-        coverImage: newCourse.coverImage ?? "",
+        coverImage: newCourse.coverImage || null,
         enforceSequential: newCourse.enforceSequential ?? true,
-        publishAt: newCourse.publishAt,
-        unpublishAt: newCourse.unpublishAt,
-      };
-      const next = [course, ...courses];
-      setCourses(next);
-      setMockCourses(next);
-      savedCourseId = course.id;
-    } else {
-      const { data, error } = await supabase
-        .from("courses")
-        .insert({
-          title: newCourse.title,
-          description: newCourse.description,
-          access_level: newCourse.accessLevel ?? "partner",
-          sort_order: courses.length + 1,
-          status: newCourse.status ?? "draft",
-          is_locked: newCourse.isLocked ?? false,
-          is_paid: newCourse.isPaid ?? false,
-          price: newCourse.isPaid ? newCourse.price ?? 0 : 0,
-          tags: newCourse.tags ?? [],
-          cover_image: newCourse.coverImage || null,
-          thumbnail_url: newCourse.coverImage || null,
-          enforce_sequential: newCourse.enforceSequential ?? true,
-          publish_at: newCourse.publishAt ?? null,
-          unpublish_at: newCourse.unpublishAt ?? null,
-        })
-        .select("id,status")
-        .single();
+        publishAt: newCourse.publishAt ?? null,
+        unpublishAt: newCourse.unpublishAt ?? null,
+      }),
+    });
 
-      if (error || !data) {
-        setErrorMessage(error?.message || "Failed to create course");
-        setIsSaving(false);
-        return false;
-      }
-      savedCourseId = data.id;
-      await logLmsAudit("lms.course.create", "course", data.id, {
-        title: newCourse.title,
-        status: data.status,
-      });
-      try {
-        await createCourseSnapshot(data.id, data.status === "published", "course_created");
-      } catch (error) {
-        setUploadMessage(
-          error instanceof Error
-            ? `Course saved, but snapshot failed: ${error.message}`
-            : "Course saved, but snapshot failed."
-        );
-      }
-      await loadData();
+    const result = (await response.json().catch(() => ({}))) as {
+      course?: Course;
+      error?: string;
+    };
+    if (!response.ok || !result.course) {
+      setErrorMessage(result.error || "Failed to create course");
+      setIsSaving(false);
+      return false;
     }
+    savedCourseId = result.course.id;
+    try {
+      await createCourseSnapshot(
+        result.course.id,
+        (result.course.status ?? "draft") === "published",
+        "course_created"
+      );
+    } catch (error) {
+      setUploadMessage(
+        error instanceof Error
+          ? `Course saved, but snapshot failed: ${error.message}`
+          : "Course saved, but snapshot failed."
+      );
+    }
+    await loadData();
 
     setNewCourse({
       title: "",
@@ -753,47 +563,32 @@ export default function AdminCoursesPage() {
     setIsSaving(true);
     setErrorMessage(null);
 
-    if (isDevBypass) {
-      const next = courses.map((course) =>
-        course.id === editingCourse.id ? editingCourse : course
-      );
-      setCourses(next);
-      setMockCourses(next);
-      setEditingCourse(null);
-      setIsSaving(false);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("courses")
-      .update({
+    const response = await fetch(`/api/admin/courses/${editingCourse.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         title: editingCourse.title,
         description: editingCourse.description,
-        access_level: editingCourse.accessLevel,
+        accessLevel: editingCourse.accessLevel,
         status: editingCourse.status ?? "draft",
-        is_locked: editingCourse.isLocked ?? false,
-        is_paid: editingCourse.isPaid ?? false,
+        isLocked: editingCourse.isLocked ?? false,
+        isPaid: editingCourse.isPaid ?? false,
         price: editingCourse.isPaid ? editingCourse.price ?? 0 : 0,
         tags: editingCourse.tags ?? [],
-        cover_image: editingCourse.coverImage || null,
-        thumbnail_url: editingCourse.coverImage || null,
-        enforce_sequential: editingCourse.enforceSequential ?? true,
-        publish_at: editingCourse.publishAt ?? null,
-        unpublish_at: editingCourse.unpublishAt ?? null,
-      })
-      .eq("id", editingCourse.id);
+        coverImage: editingCourse.coverImage || null,
+        enforceSequential: editingCourse.enforceSequential ?? true,
+        publishAt: editingCourse.publishAt ?? null,
+        unpublishAt: editingCourse.unpublishAt ?? null,
+      }),
+    });
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (!response.ok) {
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      setErrorMessage(json.error || "Failed to update course");
       setIsSaving(false);
       return;
     }
 
-    await logLmsAudit("lms.course.update", "course", editingCourse.id, {
-      status: editingCourse.status ?? "draft",
-      publishAt: editingCourse.publishAt ?? "",
-      unpublishAt: editingCourse.unpublishAt ?? "",
-    });
     try {
       await createCourseSnapshot(
         editingCourse.id,
@@ -839,66 +634,40 @@ export default function AdminCoursesPage() {
       draft.cloudflareVideoId ||
       (moduleType === "video" ? draft.resourceUrl || "demo" : "demo");
 
-    if (isDevBypass) {
-      const newModule: CourseModule = {
-        id: `${courseId}-module-${Date.now()}`,
-        courseId,
+    const response = await fetch(`/api/admin/courses/${courseId}/modules`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         title: draft.title,
-        description: draft.description || "",
+        description: draft.description || null,
         cloudflareVideoId,
         sortOrder: existing.length + 1,
         durationSeconds: draft.durationSeconds || 600,
         type: moduleType,
-        resourceUrl: draft.resourceUrl,
-        notes: draft.notes,
+        resourceUrl: draft.resourceUrl || null,
+        notes: draft.notes || null,
         passThreshold: draft.passThreshold ?? 70,
-        quizPayload: normalizedQuiz,
-      };
-      const next = [newModule, ...modules];
-      setModules(next);
-      setMockModules(next);
-    } else {
-      const quizPayloadJson = (normalizedQuiz ?? null) as Json | null;
-      const { data, error } = await supabase
-        .from("course_modules")
-        .insert({
-          course_id: courseId,
-          title: draft.title,
-          description: draft.description || null,
-          cloudflare_video_id: cloudflareVideoId,
-          sort_order: existing.length + 1,
-          duration_seconds: draft.durationSeconds || 600,
-          module_type: moduleType,
-          resource_url: draft.resourceUrl || null,
-          notes: draft.notes || null,
-          pass_threshold: draft.passThreshold ?? 70,
-          quiz_payload: quizPayloadJson,
-        })
-        .select("id,title,module_type")
-        .single();
+        quizPayload: normalizedQuiz ?? null,
+      }),
+    });
 
-      if (error || !data) {
-        setErrorMessage(error?.message || "Failed to create module");
-        setIsSaving(false);
-        return;
-      }
-      await logLmsAudit("lms.module.create", "course_module", data.id, {
-        courseId,
-        title: data.title,
-        moduleType: data.module_type,
-      });
-      const parentCourseStatus = courses.find((course) => course.id === courseId)?.status ?? "draft";
-      try {
-        await createCourseSnapshot(courseId, parentCourseStatus === "published", "module_created");
-      } catch (error) {
-        setUploadMessage(
-          error instanceof Error
-            ? `Module saved, but snapshot failed: ${error.message}`
-            : "Module saved, but snapshot failed."
-        );
-      }
-      await loadData();
+    if (!response.ok) {
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      setErrorMessage(json.error || "Failed to create module");
+      setIsSaving(false);
+      return;
     }
+    const parentCourseStatus = courses.find((course) => course.id === courseId)?.status ?? "draft";
+    try {
+      await createCourseSnapshot(courseId, parentCourseStatus === "published", "module_created");
+    } catch (error) {
+      setUploadMessage(
+        error instanceof Error
+          ? `Module saved, but snapshot failed: ${error.message}`
+          : "Module saved, but snapshot failed."
+      );
+    }
+    await loadData();
 
     setModuleDraft({
       ...moduleDraft,
@@ -926,17 +695,6 @@ export default function AdminCoursesPage() {
     setIsSaving(true);
     setErrorMessage(null);
 
-    if (isDevBypass) {
-      const next = modules.map((module) =>
-        module.id === editingModule.id ? editingModule : module
-      );
-      setModules(next);
-      setMockModules(next);
-      setEditingModule(null);
-      setIsSaving(false);
-      return;
-    }
-
     const normalizedQuiz =
       editingModule.type === "quiz"
         ? normalizeQuizPayload(editingModule.quizPayload ?? createEmptyQuizPayload())
@@ -947,33 +705,32 @@ export default function AdminCoursesPage() {
       return;
     }
 
-    const quizPayloadJson = normalizedQuiz as Json | null;
-    const { error } = await supabase
-      .from("course_modules")
-      .update({
-        title: editingModule.title,
-        description: editingModule.description || null,
-        cloudflare_video_id: editingModule.cloudflareVideoId || "demo",
-        duration_seconds: editingModule.durationSeconds,
-        module_type: editingModule.type ?? "video",
-        resource_url: editingModule.resourceUrl || null,
-        notes: editingModule.notes || null,
-        pass_threshold: editingModule.passThreshold ?? 70,
-        quiz_payload: quizPayloadJson,
-      })
-      .eq("id", editingModule.id);
+    const response = await fetch(
+      `/api/admin/courses/${editingModule.courseId}/modules/${editingModule.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editingModule.title,
+          description: editingModule.description || null,
+          cloudflareVideoId: editingModule.cloudflareVideoId || "demo",
+          durationSeconds: editingModule.durationSeconds,
+          type: editingModule.type ?? "video",
+          resourceUrl: editingModule.resourceUrl || null,
+          notes: editingModule.notes || null,
+          passThreshold: editingModule.passThreshold ?? 70,
+          quizPayload: normalizedQuiz,
+        }),
+      }
+    );
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (!response.ok) {
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      setErrorMessage(json.error || "Failed to update module");
       setIsSaving(false);
       return;
     }
 
-    await logLmsAudit("lms.module.update", "course_module", editingModule.id, {
-      courseId: editingModule.courseId,
-      title: editingModule.title,
-      moduleType: editingModule.type ?? "video",
-    });
     const parentCourseStatus =
       courses.find((course) => course.id === editingModule.courseId)?.status ?? "draft";
     try {

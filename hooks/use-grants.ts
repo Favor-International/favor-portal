@@ -1,11 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { FoundationGrant } from '@/types';
-import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/types/database';
-import { isDevBypass } from '@/lib/dev-mode';
-import { getMockGrantsForUser } from '@/lib/mock-store';
 
 interface UseGrantsReturn {
   grants: FoundationGrant[];
@@ -19,54 +15,41 @@ export function useGrants(userId: string | undefined): UseGrantsReturn {
   const [grants, setGrants] = useState<FoundationGrant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     if (!userId) {
       setIsLoading(false);
       return;
     }
-    const activeUserId = userId;
+
+    let cancelled = false;
 
     async function fetchGrants() {
       try {
         setIsLoading(true);
 
-        if (isDevBypass) {
-          setGrants(getMockGrantsForUser(activeUserId));
-          return;
+        const response = await fetch('/api/grants', { credentials: 'include' });
+        if (!response.ok) {
+          throw new Error(`Failed to load grants (${response.status})`);
         }
+        const data = await response.json();
+        if (cancelled) return;
 
-        const { data, error } = await supabase
-          .from('foundation_grants')
-          .select('*')
-          .eq('user_id', activeUserId)
-          .order('start_date', { ascending: false });
-
-        if (error) throw error;
-
-        setGrants(data?.map((g: Tables<'foundation_grants'>) => ({
-          id: g.id,
-          userId: g.user_id,
-          grantName: g.grant_name,
-          amount: Number(g.amount),
-          startDate: g.start_date,
-          endDate: g.end_date || undefined,
-          status: g.status as FoundationGrant["status"],
-          nextReportDue: g.next_report_due || undefined,
-          notes: g.notes || undefined,
-          createdAt: g.created_at,
-        })) || []);
-
+        setGrants((data.grants ?? []) as FoundationGrant[]);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Unknown error'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
     fetchGrants();
-  }, [userId, supabase]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const totalGranted = grants.reduce((sum, g) => sum + g.amount, 0);
   const activeGrants = grants.filter(g => g.status === 'active').length;

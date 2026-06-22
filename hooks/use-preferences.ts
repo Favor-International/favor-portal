@@ -1,15 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { CommunicationPreferences } from '@/types';
-import { createClient } from '@/lib/supabase/client';
-import { isDevBypass } from '@/lib/dev-mode';
-import {
-  getMockPreferences,
-  getMockPreferencesForUser,
-  setMockPreferences,
-} from '@/lib/mock-store';
-import type { Tables } from '@/types/database';
 
 interface UsePreferencesReturn {
   preferences: CommunicationPreferences | null;
@@ -18,11 +10,36 @@ interface UsePreferencesReturn {
   updatePreferences: (updates: Partial<CommunicationPreferences>) => Promise<void>;
 }
 
+// Raw communication_preferences row as returned by /api/preferences (camelCase).
+type PreferenceRow = {
+  id: string;
+  userId: string;
+  emailNewsletterWeekly: boolean | null;
+  emailNewsletterMonthly: boolean | null;
+  emailQuarterlyReport: boolean | null;
+  emailAnnualReport: boolean | null;
+  emailEvents: boolean | null;
+  emailPrayer: boolean | null;
+  emailGivingConfirmations: boolean | null;
+  smsEnabled: boolean | null;
+  smsGiftConfirmations: boolean | null;
+  smsEventReminders: boolean | null;
+  smsUrgentOnly: boolean | null;
+  mailEnabled: boolean | null;
+  mailNewsletterQuarterly: boolean | null;
+  mailAnnualReport: boolean | null;
+  mailHolidayCard: boolean | null;
+  mailAppeals: boolean | null;
+  reportPeriod: 'quarterly' | 'annual' | null;
+  blackbaudSolicitCodes: string[] | null;
+  lastSyncedAt: string | null;
+  updatedAt: string | null;
+};
+
 export function usePreferences(userId: string | undefined): UsePreferencesReturn {
   const [preferences, setPreferences] = useState<CommunicationPreferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const supabase = useMemo(() => createClient(), []);
 
   const buildDefaultPreferences = (activeUserId: string): CommunicationPreferences => ({
     id: `pref-${activeUserId}`,
@@ -48,29 +65,29 @@ export function usePreferences(userId: string | undefined): UsePreferencesReturn
     updatedAt: new Date().toISOString(),
   });
 
-  const mapPreferenceRow = (row: Tables<'communication_preferences'>): CommunicationPreferences => ({
+  const mapPreferenceRow = (row: PreferenceRow): CommunicationPreferences => ({
     id: row.id,
-    userId: row.user_id,
-    emailNewsletterWeekly: row.email_newsletter_weekly,
-    emailNewsletterMonthly: row.email_newsletter_monthly,
-    emailQuarterlyReport: row.email_quarterly_report,
-    emailAnnualReport: row.email_annual_report,
-    emailEvents: row.email_events,
-    emailPrayer: row.email_prayer,
-    emailGivingConfirmations: row.email_giving_confirmations,
-    smsEnabled: row.sms_enabled,
-    smsGiftConfirmations: row.sms_gift_confirmations,
-    smsEventReminders: row.sms_event_reminders,
-    smsUrgentOnly: row.sms_urgent_only,
-    mailEnabled: row.mail_enabled,
-    mailNewsletterQuarterly: row.mail_newsletter_quarterly,
-    mailAnnualReport: row.mail_annual_report,
-    mailHolidayCard: row.mail_holiday_card,
-    mailAppeals: row.mail_appeals,
-    reportPeriod: row.report_period === 'annual' ? 'annual' : 'quarterly',
-    blackbaudSolicitCodes: row.blackbaud_solicit_codes,
-    lastSyncedAt: row.last_synced_at || undefined,
-    updatedAt: row.updated_at,
+    userId: row.userId,
+    emailNewsletterWeekly: Boolean(row.emailNewsletterWeekly),
+    emailNewsletterMonthly: Boolean(row.emailNewsletterMonthly),
+    emailQuarterlyReport: Boolean(row.emailQuarterlyReport),
+    emailAnnualReport: Boolean(row.emailAnnualReport),
+    emailEvents: Boolean(row.emailEvents),
+    emailPrayer: Boolean(row.emailPrayer),
+    emailGivingConfirmations: Boolean(row.emailGivingConfirmations),
+    smsEnabled: Boolean(row.smsEnabled),
+    smsGiftConfirmations: Boolean(row.smsGiftConfirmations),
+    smsEventReminders: Boolean(row.smsEventReminders),
+    smsUrgentOnly: Boolean(row.smsUrgentOnly),
+    mailEnabled: Boolean(row.mailEnabled),
+    mailNewsletterQuarterly: Boolean(row.mailNewsletterQuarterly),
+    mailAnnualReport: Boolean(row.mailAnnualReport),
+    mailHolidayCard: Boolean(row.mailHolidayCard),
+    mailAppeals: Boolean(row.mailAppeals),
+    reportPeriod: row.reportPeriod === 'annual' ? 'annual' : 'quarterly',
+    blackbaudSolicitCodes: row.blackbaudSolicitCodes ?? [],
+    lastSyncedAt: row.lastSyncedAt || undefined,
+    updatedAt: row.updatedAt ?? new Date().toISOString(),
   });
 
   useEffect(() => {
@@ -80,38 +97,39 @@ export function usePreferences(userId: string | undefined): UsePreferencesReturn
     }
     const activeUserId = userId;
 
+    let cancelled = false;
+
     async function fetchPreferences() {
       try {
         setIsLoading(true);
 
-        if (isDevBypass) {
-          const mockPrefs = getMockPreferencesForUser(activeUserId);
-          setPreferences(mockPrefs ?? buildDefaultPreferences(activeUserId));
-          return;
+        const response = await fetch('/api/preferences', { credentials: 'include' });
+        if (!response.ok) {
+          throw new Error(`Failed to load preferences (${response.status})`);
         }
+        const data = await response.json();
+        if (cancelled) return;
 
-        const { data, error } = await supabase
-          .from('communication_preferences')
-          .select('*')
-          .eq('user_id', activeUserId)
-          .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-
-        if (data) {
-          setPreferences(mapPreferenceRow(data));
+        const row = data.preferences as PreferenceRow | null;
+        if (row) {
+          setPreferences(mapPreferenceRow(row));
         } else {
           setPreferences(buildDefaultPreferences(activeUserId));
         }
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Unknown error'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
     fetchPreferences();
-  }, [userId, supabase]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   async function updatePreferences(updates: Partial<CommunicationPreferences>) {
     if (!userId) return;
@@ -124,52 +142,38 @@ export function usePreferences(userId: string | undefined): UsePreferencesReturn
       updatedAt: new Date().toISOString(),
     };
 
-    try {
-      if (isDevBypass) {
-        const current = getMockPreferencesForUser(userId);
-        if (current) {
-          const all = getMockPreferences().map((entry) =>
-            entry.userId === userId ? next : entry
-          );
-          setMockPreferences(all);
-        } else {
-          setMockPreferences([next, ...getMockPreferences()]);
-        }
-        setPreferences(next);
-        return;
-      }
+    const response = await fetch('/api/preferences', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailNewsletterWeekly: next.emailNewsletterWeekly,
+        emailNewsletterMonthly: next.emailNewsletterMonthly,
+        emailQuarterlyReport: next.emailQuarterlyReport,
+        emailAnnualReport: next.emailAnnualReport,
+        emailEvents: next.emailEvents,
+        emailPrayer: next.emailPrayer,
+        emailGivingConfirmations: next.emailGivingConfirmations,
+        smsEnabled: next.smsEnabled,
+        smsGiftConfirmations: next.smsGiftConfirmations,
+        smsEventReminders: next.smsEventReminders,
+        smsUrgentOnly: next.smsUrgentOnly,
+        mailEnabled: next.mailEnabled,
+        mailNewsletterQuarterly: next.mailNewsletterQuarterly,
+        mailAnnualReport: next.mailAnnualReport,
+        mailHolidayCard: next.mailHolidayCard,
+        mailAppeals: next.mailAppeals,
+        reportPeriod: next.reportPeriod,
+      }),
+    });
 
-      const { error } = await supabase
-        .from('communication_preferences')
-        .upsert({
-          user_id: userId,
-          email_newsletter_weekly: next.emailNewsletterWeekly,
-          email_newsletter_monthly: next.emailNewsletterMonthly,
-          email_quarterly_report: next.emailQuarterlyReport,
-          email_annual_report: next.emailAnnualReport,
-          email_events: next.emailEvents,
-          email_prayer: next.emailPrayer,
-          email_giving_confirmations: next.emailGivingConfirmations,
-          sms_enabled: next.smsEnabled,
-          sms_gift_confirmations: next.smsGiftConfirmations,
-          sms_event_reminders: next.smsEventReminders,
-          sms_urgent_only: next.smsUrgentOnly,
-          mail_enabled: next.mailEnabled,
-          mail_newsletter_quarterly: next.mailNewsletterQuarterly,
-          mail_annual_report: next.mailAnnualReport,
-          mail_holiday_card: next.mailHolidayCard,
-          mail_appeals: next.mailAppeals,
-          report_period: next.reportPeriod,
-          blackbaud_solicit_codes: next.blackbaudSolicitCodes,
-          updated_at: next.updatedAt,
-        }, { onConflict: 'user_id' });
-
-      if (error) throw error;
-
-      setPreferences(next);
-    } catch (err) {
-      throw err;
+    if (!response.ok) {
+      throw new Error(`Failed to update preferences (${response.status})`);
     }
+
+    const data = await response.json();
+    const row = data.preferences as PreferenceRow | null;
+    setPreferences(row ? mapPreferenceRow(row) : next);
   }
 
   return { preferences, isLoading, error, updatePreferences };

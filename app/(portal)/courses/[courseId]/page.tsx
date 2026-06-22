@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/portal/empty-state";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
-import { createClient } from "@/lib/supabase/client";
 import { getStreamUrl } from "@/lib/cloudflare/client";
 import { hasAdminPermission } from "@/lib/admin/roles";
 import {
@@ -34,24 +33,6 @@ import {
   Pin,
   PlayCircle,
 } from "lucide-react";
-import {
-  addMockCohort,
-  addMockDiscussionReply,
-  addMockDiscussionThread,
-  addMockQuizAttempt,
-  getMockCohortMembers,
-  getMockCohortsForCourse,
-  getMockDiscussionRepliesForThread,
-  getMockDiscussionThreadsForCourse,
-  getMockNoteForModule,
-  getMockQuizAttemptsForModule,
-  joinMockCohort,
-  leaveMockCohort,
-  recordMockModuleEvent,
-  updateMockDiscussionThread,
-  upsertMockNote,
-} from "@/lib/mock-store";
-import { isDevBypass } from "@/lib/dev-mode";
 import type {
   CourseCohort,
   CourseDiscussionReply,
@@ -88,21 +69,14 @@ function formatDateTime(value: string | undefined | null) {
   return new Date(value).toLocaleString();
 }
 
-let localIdCounter = 0;
-function nextLocalId(prefix: string) {
-  localIdCounter += 1;
-  return `${prefix}-${localIdCounter}`;
-}
-
 export default function CourseDetailPage() {
   const params = useParams<{ courseId: string }>();
   const courseId = params?.courseId;
   const { user } = useAuth();
   const { courses, modules, progress, isLoading, updateProgress } = useCourses(user?.id);
-  const supabase = useMemo(() => createClient(), []);
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [noteValue, setNoteValue] = useState("");
-  const [noteId, setNoteId] = useState<string | null>(null);
+  const [, setNoteId] = useState<string | null>(null);
   const [noteUpdatedAt, setNoteUpdatedAt] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSaved, setNoteSaved] = useState(false);
@@ -113,7 +87,7 @@ export default function CourseDetailPage() {
   const [quizAttemptStartedAt, setQuizAttemptStartedAt] = useState<string | null>(null);
   const [quizAttempts, setQuizAttempts] = useState<UserQuizAttempt[]>([]);
   const [quizAttemptError, setQuizAttemptError] = useState<string | null>(null);
-  const [certificateIssuedAt, setCertificateIssuedAt] = useState<string | null>(null);
+  const [, setCertificateIssuedAt] = useState<string | null>(null);
   const [certificateError, setCertificateError] = useState<string | null>(null);
   const [certificateUrl, setCertificateUrl] = useState<string | null>(null);
   const [certificateVerificationUrl, setCertificateVerificationUrl] = useState<string | null>(null);
@@ -200,41 +174,33 @@ export default function CourseDetailPage() {
 
   useEffect(() => {
     if (!user || !activeModuleId) return;
-    const currentUserId = user.id;
     const currentModuleId = activeModuleId;
 
     async function loadNote() {
       setNoteError(null);
 
-      if (isDevBypass) {
-        const existing = getMockNoteForModule(currentUserId, currentModuleId);
-        setNoteValue(existing?.content ?? "");
-        setNoteId(existing?.id ?? null);
-        setNoteUpdatedAt(existing?.updatedAt ?? null);
-        setNoteSaved(false);
-        return;
-      }
+      const response = await fetch(
+        `/api/lms/notes?moduleId=${encodeURIComponent(currentModuleId)}`,
+        { credentials: "include" }
+      );
+      const json = (await response.json()) as {
+        note?: { id: string; content: string; updatedAt: string | null } | null;
+        error?: string;
+      };
 
-      const { data, error } = await supabase
-        .from("user_course_notes")
-        .select("*")
-        .eq("user_id", currentUserId)
-        .eq("module_id", currentModuleId)
-        .maybeSingle();
-
-      if (error) {
+      if (!response.ok) {
         setNoteError("Unable to load saved notes right now.");
         return;
       }
 
-      setNoteValue(data?.content ?? "");
-      setNoteId(data?.id ?? null);
-      setNoteUpdatedAt(data?.updated_at ?? null);
+      setNoteValue(json.note?.content ?? "");
+      setNoteId(json.note?.id ?? null);
+      setNoteUpdatedAt(json.note?.updatedAt ?? null);
       setNoteSaved(false);
     }
 
     void loadNote();
-  }, [activeModuleId, supabase, user]);
+  }, [activeModuleId, user]);
 
   useEffect(() => {
     setQuizAnswers({});
@@ -250,50 +216,29 @@ export default function CourseDetailPage() {
         return;
       }
 
-      if (isDevBypass) {
-        setQuizAttempts(getMockQuizAttemptsForModule(user.id, activeModuleId));
-        return;
-      }
+      const response = await fetch(
+        `/api/lms/quiz-attempts?moduleId=${encodeURIComponent(activeModuleId)}`,
+        { credentials: "include" }
+      );
+      const json = (await response.json()) as {
+        attempts?: UserQuizAttempt[];
+        error?: string;
+      };
 
-      const { data, error } = await supabase
-        .from("user_quiz_attempts")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("module_id", activeModuleId)
-        .order("attempt_number", { ascending: false });
-
-      if (error) {
+      if (!response.ok) {
         setQuizAttemptError("Unable to load quiz attempt history.");
         setQuizAttempts([]);
         return;
       }
 
-      const attempts = (data ?? []).map((row) => ({
-        id: row.id,
-        userId: row.user_id,
-        courseId: row.course_id,
-        moduleId: row.module_id,
-        attemptNumber: row.attempt_number,
-        scorePercent: row.score_percent,
-        correctAnswers: row.correct_answers,
-        totalQuestions: row.total_questions,
-        passed: row.passed,
-        answers: (row.answers as Record<string, string | number>) ?? {},
-        questionOrder: row.question_order ?? [],
-        optionOrder: (row.option_order as Record<string, number[]>) ?? {},
-        startedAt: row.started_at,
-        submittedAt: row.submitted_at,
-        durationSeconds: row.duration_seconds,
-        metadata:
-          row.metadata && typeof row.metadata === "object"
-            ? (row.metadata as Record<string, string | number | boolean>)
-            : undefined,
-      }));
+      const attempts = [...(json.attempts ?? [])].sort(
+        (a, b) => b.attemptNumber - a.attemptNumber
+      );
       setQuizAttempts(attempts);
     }
 
     void loadQuizAttempts();
-  }, [activeModuleId, supabase, user?.id]);
+  }, [activeModuleId, user?.id]);
 
   useEffect(() => {
     if (!user?.id || !courseId || !activeModuleId) return;
@@ -301,44 +246,25 @@ export default function CourseDetailPage() {
     const moduleEntry = modules.find((entry) => entry.id === activeModuleId);
     if (!moduleEntry) return;
 
-    const now = new Date().toISOString();
-    if (isDevBypass) {
-      recordMockModuleEvent({
-        id: `module-event-${Date.now()}`,
-        userId: user.id,
-        courseId,
+    void fetch("/api/lms/events", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        courseId: moduleEntry.courseId,
         moduleId: activeModuleId,
         eventType: "module_viewed",
         watchTimeSeconds: 0,
-        createdAt: now,
-        metadata: { source: "dev" },
-      });
-      return;
-    }
-
-    void supabase.from("course_module_events").insert({
-      user_id: user.id,
-      course_id: moduleEntry.courseId,
-      module_id: activeModuleId,
-      event_type: "module_viewed",
-      watch_time_seconds: 0,
-      metadata: {
-        source: "module_change",
-      },
+        metadata: {
+          source: "module_change",
+        },
+      }),
     });
-  }, [activeModuleId, courseId, modules, supabase, user?.id]);
+  }, [activeModuleId, courseId, modules, user?.id]);
 
   useEffect(() => {
     if (!user || !course || !isCourseComplete) return;
     const currentCourseId = course.id;
-    if (isDevBypass) {
-      const now = new Date().toISOString();
-      setCertificateIssuedAt(now);
-      setCertificateUrl(null);
-      setCertificateVerificationUrl(`/certificates/dev-${course.id}`);
-      setCertificateNumber(`DEV-${course.id.toUpperCase()}`);
-      return;
-    }
 
     async function issueCertificate() {
       setCertificateError(null);
@@ -382,29 +308,6 @@ export default function CourseDetailPage() {
       setCohortError(null);
       setCohortLoading(true);
 
-      if (isDevBypass) {
-        const cohortRows = getMockCohortsForCourse(courseId);
-        const memberRows = getMockCohortMembers();
-        const mapped = cohortRows.map((cohort) => {
-          const members = memberRows.filter((member) => member.cohortId === cohort.id);
-          const membership = members.find((member) => member.userId === user.id);
-          return {
-            ...cohort,
-            membersCount: members.length,
-            isMember: Boolean(membership),
-            membershipRole: membership?.membershipRole,
-          };
-        });
-        setCourseCohorts(mapped);
-        setSelectedCohortId((current) => {
-          if (current && mapped.some((cohort) => cohort.id === current)) return current;
-          const joined = mapped.find((cohort) => cohort.isMember);
-          return joined?.id ?? mapped[0]?.id ?? null;
-        });
-        setCohortLoading(false);
-        return;
-      }
-
       const response = await fetch(`/api/lms/cohorts?courseId=${encodeURIComponent(courseId)}`);
       const json = (await response.json()) as {
         cohorts?: CourseCohort[];
@@ -441,12 +344,6 @@ export default function CourseDetailPage() {
 
       setDiscussionLoading(true);
       setThreadError(null);
-
-      if (isDevBypass) {
-        setDiscussionThreads(getMockDiscussionThreadsForCourse(courseId, selectedCohortId));
-        setDiscussionLoading(false);
-        return;
-      }
 
       const params = new URLSearchParams();
       params.set("courseId", courseId);
@@ -487,39 +384,6 @@ export default function CourseDetailPage() {
 
     setCohortError(null);
 
-    if (isDevBypass) {
-      const cohortId = nextLocalId("cohort");
-      addMockCohort({
-        id: cohortId,
-        courseId,
-        name,
-        description: newCohortDescription.trim() || undefined,
-        isActive: true,
-        createdBy: user.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        membersCount: 1,
-        isMember: true,
-        membershipRole: "instructor",
-      });
-      joinMockCohort(cohortId, user.id, "instructor");
-      setNewCohortName("");
-      setNewCohortDescription("");
-      const mapped = getMockCohortsForCourse(courseId).map((cohort) => {
-        const members = getMockCohortMembers().filter((member) => member.cohortId === cohort.id);
-        const membership = members.find((member) => member.userId === user.id);
-        return {
-          ...cohort,
-          membersCount: members.length,
-          isMember: Boolean(membership),
-          membershipRole: membership?.membershipRole,
-        };
-      });
-      setCourseCohorts(mapped);
-      setSelectedCohortId(cohortId);
-      return;
-    }
-
     const response = await fetch("/api/lms/cohorts", {
       method: "POST",
       headers: {
@@ -556,36 +420,6 @@ export default function CourseDetailPage() {
   async function toggleCohortMembership(cohort: CourseCohort) {
     if (!user?.id) return;
     setCohortError(null);
-
-    if (isDevBypass) {
-      if (cohort.isMember) {
-        leaveMockCohort(cohort.id, user.id);
-      } else {
-        joinMockCohort(cohort.id, user.id);
-      }
-      const mapped = getMockCohortsForCourse(courseId).map((entry) => {
-        const members = getMockCohortMembers().filter((member) => member.cohortId === entry.id);
-        const membership = members.find((member) => member.userId === user.id);
-        return {
-          ...entry,
-          membersCount: members.length,
-          isMember: Boolean(membership),
-          membershipRole: membership?.membershipRole,
-        };
-      });
-      setCourseCohorts(mapped);
-      let nextSelected = selectedCohortId;
-      if (!cohort.isMember) {
-        nextSelected = cohort.id;
-        setSelectedCohortId(cohort.id);
-      } else if (selectedCohortId === cohort.id) {
-        const fallback = mapped.find((entry) => entry.isMember) ?? mapped[0];
-        nextSelected = fallback?.id ?? null;
-        setSelectedCohortId(nextSelected);
-      }
-      setDiscussionThreads(getMockDiscussionThreadsForCourse(courseId, nextSelected));
-      return;
-    }
 
     const response = await fetch("/api/lms/cohorts", {
       method: "POST",
@@ -625,30 +459,6 @@ export default function CourseDetailPage() {
 
     setThreadError(null);
 
-    if (isDevBypass) {
-      const thread: CourseDiscussionThread = {
-        id: nextLocalId("thread"),
-        courseId,
-        cohortId: selectedCohortId ?? undefined,
-        moduleId: activeModule?.id ?? undefined,
-        authorUserId: user.id,
-        authorName: `${user.firstName} ${user.lastName}`.trim(),
-        title,
-        body,
-        pinned: false,
-        locked: false,
-        replyCount: 0,
-        lastActivityAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      addMockDiscussionThread(thread);
-      setDiscussionThreads(getMockDiscussionThreadsForCourse(courseId, selectedCohortId));
-      setThreadTitle("");
-      setThreadBody("");
-      return;
-    }
-
     const response = await fetch("/api/lms/discussions/threads", {
       method: "POST",
       headers: {
@@ -684,14 +494,6 @@ export default function CourseDetailPage() {
   async function toggleThreadModeration(threadId: string, updates: { pinned?: boolean; locked?: boolean }) {
     if (!canManageLms) return;
 
-    if (isDevBypass) {
-      updateMockDiscussionThread(threadId, updates);
-      setDiscussionThreads((current) =>
-        current.map((thread) => (thread.id === threadId ? { ...thread, ...updates } : thread))
-      );
-      return;
-    }
-
     const response = await fetch(`/api/lms/discussions/threads/${threadId}`, {
       method: "PATCH",
       headers: {
@@ -714,14 +516,6 @@ export default function CourseDetailPage() {
     if (!user?.id) return;
     setReplyError(null);
 
-    if (isDevBypass) {
-      setRepliesByThreadId((current) => ({
-        ...current,
-        [threadId]: getMockDiscussionRepliesForThread(threadId),
-      }));
-      return;
-    }
-
     const response = await fetch(`/api/lms/discussions/threads/${threadId}/replies`);
     const json = (await response.json()) as { replies?: CourseDiscussionReply[]; error?: string };
     if (!response.ok) {
@@ -739,27 +533,6 @@ export default function CourseDetailPage() {
     const content = (replyDraftByThreadId[thread.id] ?? "").trim();
     if (!content) return;
     setReplyError(null);
-
-    if (isDevBypass) {
-      const reply: CourseDiscussionReply = {
-        id: nextLocalId("reply"),
-        threadId: thread.id,
-        authorUserId: user.id,
-        authorName: `${user.firstName} ${user.lastName}`.trim(),
-        body: content,
-        isInstructorReply: canManageLms,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      addMockDiscussionReply(reply);
-      setRepliesByThreadId((current) => ({
-        ...current,
-        [thread.id]: getMockDiscussionRepliesForThread(thread.id),
-      }));
-      setDiscussionThreads(getMockDiscussionThreadsForCourse(courseId, selectedCohortId));
-      setReplyDraftByThreadId((current) => ({ ...current, [thread.id]: "" }));
-      return;
-    }
 
     const response = await fetch(`/api/lms/discussions/threads/${thread.id}/replies`, {
       method: "POST",
@@ -838,50 +611,32 @@ export default function CourseDetailPage() {
 
   function saveNote() {
     if (!user || !activeModule) return;
-    const currentUserId = user.id;
+    const currentModuleId = activeModule.id;
 
     async function persistNote() {
       setNoteError(null);
-      const now = new Date().toISOString();
 
-      if (isDevBypass) {
-        const entry = {
-          id: noteId ?? `note-${Date.now()}`,
-          userId: currentUserId,
-          moduleId: activeModule.id,
+      const response = await fetch("/api/lms/notes", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          moduleId: currentModuleId,
           content: noteValue.trim(),
-          updatedAt: now,
-        };
-        upsertMockNote(entry);
-        setNoteId(entry.id);
-        setNoteUpdatedAt(entry.updatedAt);
-        setNoteSaved(true);
-        setTimeout(() => setNoteSaved(false), 2000);
-        return;
-      }
+        }),
+      });
+      const json = (await response.json()) as {
+        note?: { id: string; content: string; updatedAt: string | null } | null;
+        error?: string;
+      };
 
-      const { data, error } = await supabase
-        .from("user_course_notes")
-        .upsert(
-          {
-            id: noteId ?? undefined,
-            user_id: currentUserId,
-            module_id: activeModule.id,
-            content: noteValue.trim(),
-            updated_at: now,
-          },
-          { onConflict: "user_id,module_id" }
-        )
-        .select("*")
-        .single();
-
-      if (error) {
+      if (!response.ok || !json.note) {
         setNoteError("We could not save this note. Please try again.");
         return;
       }
 
-      setNoteId(data.id);
-      setNoteUpdatedAt(data.updated_at);
+      setNoteId(json.note.id);
+      setNoteUpdatedAt(json.note.updatedAt);
       setNoteSaved(true);
       setTimeout(() => setNoteSaved(false), 2000);
     }
@@ -941,85 +696,55 @@ export default function CourseDetailPage() {
     };
 
     async function persistAttempt() {
-      if (isDevBypass) {
-        addMockQuizAttempt(nextAttempt);
-        recordMockModuleEvent({
-          id: `module-event-${Date.now()}`,
-          userId: currentUser.id,
+      const response = await fetch("/api/lms/quiz-attempts", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: currentCourse.id,
+          moduleId: currentModule.id,
+          attemptNumber: nextAttemptNumber,
+          scorePercent: result.scorePercent,
+          correctAnswers: result.correctAnswers,
+          totalQuestions: result.totalQuestions,
+          passed: result.passed,
+          answers: quizAnswers,
+          questionOrder: currentQuizSession.questionOrder,
+          optionOrder: currentQuizSession.optionOrderByQuestion,
+          startedAt: quizAttemptStartedAt ?? now,
+          durationSeconds,
+          metadata: {
+            seed: currentQuizSession.seed,
+          },
+        }),
+      });
+      const json = (await response.json()) as {
+        attempt?: UserQuizAttempt;
+        error?: string;
+      };
+
+      if (!response.ok || !json.attempt) {
+        setQuizAttemptError("Attempt saved locally in this session, but history failed to persist.");
+        setQuizAttempts((current) => [nextAttempt, ...current]);
+      } else {
+        setQuizAttempts((current) => [json.attempt!, ...current]);
+      }
+
+      void fetch("/api/lms/events", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           courseId: currentCourse.id,
           moduleId: currentModule.id,
           eventType: result.passed ? "quiz_passed" : "quiz_failed",
           watchTimeSeconds: currentModule.durationSeconds,
-          createdAt: now,
-          metadata: { score: result.scorePercent },
-        });
-        setQuizAttempts((current) => [nextAttempt, ...current]);
-      } else {
-        const { data, error } = await supabase
-          .from("user_quiz_attempts")
-          .insert({
-            user_id: currentUser.id,
-            course_id: currentCourse.id,
-            module_id: currentModule.id,
-            attempt_number: nextAttemptNumber,
-            score_percent: result.scorePercent,
-            correct_answers: result.correctAnswers,
-            total_questions: result.totalQuestions,
-            passed: result.passed,
-            answers: quizAnswers,
-            question_order: currentQuizSession.questionOrder,
-            option_order: currentQuizSession.optionOrderByQuestion,
-            started_at: quizAttemptStartedAt ?? now,
-            submitted_at: now,
-            duration_seconds: durationSeconds,
-            metadata: {
-              seed: currentQuizSession.seed,
-            },
-            })
-          .select("*")
-          .single();
-
-        if (error) {
-          setQuizAttemptError("Attempt saved locally in this session, but history failed to persist.");
-        } else {
-          setQuizAttempts((current) => [
-            {
-              id: data.id,
-              userId: data.user_id,
-              courseId: data.course_id,
-              moduleId: data.module_id,
-              attemptNumber: data.attempt_number,
-              scorePercent: data.score_percent,
-              correctAnswers: data.correct_answers,
-              totalQuestions: data.total_questions,
-              passed: data.passed,
-              answers: (data.answers as Record<string, string | number>) ?? {},
-              questionOrder: data.question_order ?? [],
-              optionOrder: (data.option_order as Record<string, number[]>) ?? {},
-              startedAt: data.started_at,
-              submittedAt: data.submitted_at,
-              durationSeconds: data.duration_seconds,
-              metadata:
-                data.metadata && typeof data.metadata === "object"
-                  ? (data.metadata as Record<string, string | number | boolean>)
-                  : undefined,
-            },
-            ...current,
-          ]);
-        }
-
-        await supabase.from("course_module_events").insert({
-          user_id: currentUser.id,
-          course_id: currentCourse.id,
-          module_id: currentModule.id,
-          event_type: result.passed ? "quiz_passed" : "quiz_failed",
-          watch_time_seconds: currentModule.durationSeconds,
           metadata: {
             score: result.scorePercent,
             attemptNumber: nextAttemptNumber,
           },
-        });
-      }
+        }),
+      });
 
       if (result.passed) {
         await updateProgress(currentModule.id, {
@@ -1047,42 +772,7 @@ export default function CourseDetailPage() {
       window.open(certificateUrl, "_blank", "noopener,noreferrer");
       return;
     }
-    if (!isDevBypass) {
-      setCertificateError("Certificate is still generating. Try again in a few seconds.");
-      return;
-    }
-    const issuedDate = certificateIssuedAt
-      ? new Date(certificateIssuedAt).toLocaleDateString()
-      : new Date().toLocaleDateString();
-    const name = user ? `${user.firstName} ${user.lastName}` : "Favor Partner";
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Favor Certificate</title>
-  <style>
-    body { font-family: Georgia, serif; background: #f5f3ef; margin: 0; padding: 48px; }
-    .card { background: #fffef9; border: 2px solid #2b4d24; border-radius: 16px; padding: 36px; text-align: center; }
-    .brand { color: #2b4d24; letter-spacing: 2px; font-size: 12px; text-transform: uppercase; }
-    h1 { color: #1a1a1a; margin: 16px 0 8px; font-size: 40px; }
-    .name { font-size: 30px; color: #2b4d24; margin: 20px 0; }
-    .course { font-size: 20px; color: #333; margin: 8px 0 20px; }
-    .meta { color: #666; font-size: 14px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="brand">Favor International</div>
-    <h1>Certificate of Completion</h1>
-    <div class="meta">This certifies that</div>
-    <div class="name">${name}</div>
-    <div class="meta">has successfully completed</div>
-    <div class="course">${course.title}</div>
-    <div class="meta">Issued on ${issuedDate}</div>
-  </div>
-</body>
-</html>`;
-    downloadFile(`${sanitizeFilename(course.title)}-certificate.html`, html, "text/html;charset=utf-8");
+    setCertificateError("Certificate is still generating. Try again in a few seconds.");
   }
 
   function downloadActiveNote() {

@@ -1,14 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Gift, RecurringGift } from '@/types';
-import { createClient } from '@/lib/supabase/client';
-import type { Tables } from '@/types/database';
-import { isDevBypass } from '@/lib/dev-mode';
-import {
-  getMockGiftsForUser,
-  getMockRecurringGiftsForUser,
-} from '@/lib/mock-store';
 
 interface UseGivingReturn {
   gifts: Gift[];
@@ -25,7 +18,6 @@ export function useGiving(userId: string | undefined, refreshKey?: number): UseG
   const [recurringGifts, setRecurringGifts] = useState<RecurringGift[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const supabase = useMemo(() => createClient(), []);
   const [refreshToken, setRefreshToken] = useState(0);
 
   const refresh = () => setRefreshToken((value) => value + 1);
@@ -35,76 +27,56 @@ export function useGiving(userId: string | undefined, refreshKey?: number): UseG
       setIsLoading(false);
       return;
     }
-    const activeUserId = userId;
+
+    let cancelled = false;
 
     async function fetchGiving() {
       try {
         setIsLoading(true);
 
-        if (isDevBypass) {
-          const mockGifts = getMockGiftsForUser(activeUserId);
-          const combined = [...mockGifts].sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-          const recurring = getMockRecurringGiftsForUser(activeUserId);
-          setGifts(combined);
-          setRecurringGifts(recurring);
-          return;
+        const [historyRes, recurringRes] = await Promise.all([
+          fetch('/api/giving/history', { credentials: 'include' }),
+          fetch('/api/giving/recurring', { credentials: 'include' }),
+        ]);
+
+        if (!historyRes.ok) {
+          throw new Error(`Failed to load giving history (${historyRes.status})`);
+        }
+        if (!recurringRes.ok) {
+          throw new Error(`Failed to load recurring gifts (${recurringRes.status})`);
         }
 
-        // Fetch gifts
-        const { data: giftsData, error: giftsError } = await supabase
-          .from('giving_cache')
-          .select('*')
-          .eq('user_id', activeUserId)
-          .order('gift_date', { ascending: false });
+        const historyData = await historyRes.json();
+        const recurringData = await recurringRes.json();
+        if (cancelled) return;
 
-        if (giftsError) throw giftsError;
+        const loadedGifts = ((historyData.gifts ?? []) as Gift[])
+          .slice()
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        // Fetch recurring gifts
-        const { data: recurringData, error: recurringError } = await supabase
-          .from('recurring_gifts')
-          .select('*')
-          .eq('user_id', activeUserId)
-          .eq('status', 'active');
+        const loadedRecurring = ((recurringData.gifts ?? []) as RecurringGift[]).filter(
+          (gift) => gift.status === 'active'
+        );
 
-        if (recurringError) throw recurringError;
-
-        setGifts(giftsData?.map((g: Tables<'giving_cache'>) => ({
-          id: g.id,
-          userId: g.user_id,
-          amount: Number(g.amount),
-          date: g.gift_date,
-          designation: g.designation,
-          blackbaudGiftId: g.blackbaud_gift_id || undefined,
-          isRecurring: g.is_recurring,
-          receiptSent: g.receipt_sent,
-          source: (g.source as Gift["source"]) ?? "imported",
-        })) || []);
-
-        setRecurringGifts(recurringData?.map((r: Tables<'recurring_gifts'>) => ({
-          id: r.id,
-          userId: r.user_id,
-          amount: Number(r.amount),
-          frequency: r.frequency as RecurringGift["frequency"],
-          nextChargeDate: r.next_charge_date,
-          stripeSubscriptionId: r.stripe_subscription_id,
-          status: r.status as RecurringGift["status"],
-          createdAt: r.created_at,
-        })) || []);
-
+        setGifts(loadedGifts);
+        setRecurringGifts(loadedRecurring);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Unknown error'));
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
     fetchGiving();
-  }, [userId, supabase, refreshKey, refreshToken]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, refreshKey, refreshToken]);
 
   const totalGiven = gifts.reduce((sum, g) => sum + g.amount, 0);
-  
+
   const currentYear = new Date().getFullYear();
   const ytdGiven = gifts
     .filter(g => new Date(g.date).getFullYear() === currentYear)
