@@ -13,4 +13,5 @@ test("health endpoint reports all Cloudflare bindings reachable", async ({ reque
     R2: true,
   });
   expect(body.dbQueryOk).toBe(true);
+  expect(body.tableCount).toBeGreaterThanOrEqual(28);
 });
