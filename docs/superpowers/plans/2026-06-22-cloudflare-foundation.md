@@ -382,3 +382,33 @@ The foundation is complete: the app builds and runs on Cloudflare Workers via Op
 - **Plan 2 (Native auth)** restores route gating in `proxy.ts` (or per-route guards if the fallback was taken) using KV sessions + D1 magic-link tokens, and removes `lib/supabase/*`.
 - **Plan 3 (Data layer + authz)** adds the Drizzle schema for all 28 tables, the translated migrations + seed, and the scoped data-access layer with the per-table ownership matrix.
 - The `DB`/`SESSIONS`/`RATE_LIMIT`/`R2` binding names established here are the contract those plans build on — do not rename them.
+
+---
+
+## Execution outcome (2026-06-22)
+
+**Validated locally (Windows):**
+- Dependency compatibility resolved: Next **16.2.9** + `@opennextjs/cloudflare` 1.19.11 + Wrangler 4.103.
+- Cloudflare resources created in the **goparadigm** account (`b77dd28c…`): D1 `favor-portal`
+  (`d783ef09-…`), KV `SESSIONS` (`28d6630f…`), KV `RATE_LIMIT` (`9e4ad0a8…`), R2 `favor-portal-assets`.
+- `/api/health` returns all bindings reachable + live D1 `SELECT 1` — **Playwright passes** against `next dev`.
+- `npm run lint` clean, `npm run typecheck` 0 errors, `next build --webpack` compiles.
+
+**Deviations from the original plan (all committed):**
+- **Turbopack → Webpack:** Next 16 defaults `next build` to Turbopack, whose server chunks fail in the
+  OpenNext worker (`ChunkLoadError`). `build` now uses `--webpack`; added `output: "standalone"` and a
+  `cf:build` (`opennextjs-cloudflare build --skipNextBuild`) step.
+- **Env types hand-maintained:** the `wrangler types` output injects Workers runtime globals that override
+  the DOM `Response.json()` (160 type errors). Replaced with a module-form `cloudflare-env.d.ts` +
+  `@cloudflare/workers-types`; dropped the `cf-typegen` script.
+- **`proxy.ts` removed:** OpenNext rejects Node-runtime middleware. Auth gating moves to
+  route/server-component guards in Plan 2 (the spec §14 fallback). It was a no-op pass-through here.
+
+**Deferred — deploy needs a Linux build environment:**
+The OpenNext **bundle/deploy** step does not complete on native Windows (EPERM on `.open-next`; ENOENT
+copying the `(portal)` route-group `client-reference-manifest`). OpenNext officially recommends Linux/WSL.
+**Resolution:** deploy via a cloud Linux build (Cloudflare Workers Builds, Git-connected — matches the
+existing Pages workflow — or GitHub Actions) when going live. No local install needed. **Feature
+development continues on Windows via `next dev` + local D1**, which is fully functional. Plan 1's
+"green deployed worker" milestone is therefore validated at the build/dev level and finalized at first
+cloud deploy.
