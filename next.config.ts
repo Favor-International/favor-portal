@@ -8,6 +8,8 @@ initOpenNextCloudflareForDev();
 const appDir = dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  // OpenNext (with --skipNextBuild) consumes Next's standalone server output.
+  output: "standalone",
   turbopack: {
     root: appDir,
   },
