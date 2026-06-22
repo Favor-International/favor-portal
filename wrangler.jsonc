@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "favor-portal",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "favor-portal", "database_id": "PLACEHOLDER_SET_IN_TASK_3" }
+  ],
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "PLACEHOLDER_SET_IN_TASK_3" },
+    { "binding": "RATE_LIMIT", "id": "PLACEHOLDER_SET_IN_TASK_3" }
+  ],
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "favor-portal-assets" }
+  ]
+}
