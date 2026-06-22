@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { isDevBypass } from '@/lib/dev-mode';
-import { getMockRecurringGifts, setMockRecurringGifts } from '@/lib/mock-store';
+import { authedRoute } from '@/lib/api/route-auth';
+import { getDb } from '@/lib/db/client';
+import { updateRecurringGift, deleteRecurringGift, type UpdateRecurringGift } from '@/lib/db/access/giving';
+import { AuthorizationError } from '@/lib/db/access/authz';
 import { logError, logInfo } from '@/lib/logger';
+
+export const runtime = 'nodejs';
 
 export async function PATCH(
   request: NextRequest,
@@ -13,45 +16,26 @@ export async function PATCH(
     const body = await request.json();
     const { amount, frequency, nextChargeDate } = body;
 
-    if (isDevBypass) {
-      const gifts = getMockRecurringGifts();
-      const giftIndex = gifts.findIndex((g) => g.id === id);
-      
-      if (giftIndex === -1) {
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
+
+    const fields: UpdateRecurringGift = {
+      ...(amount && { amount }),
+      ...(frequency && { frequency }),
+      ...(nextChargeDate && { nextChargeDate }),
+    };
+
+    let gift;
+    try {
+      gift = await updateRecurringGift(getDb(), ctx, id, fields);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
         return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
       }
-
-      gifts[giftIndex] = {
-        ...gifts[giftIndex],
-        ...(amount && { amount }),
-        ...(frequency && { frequency }),
-        ...(nextChargeDate && { nextChargeDate }),
-      };
-
-      setMockRecurringGifts(gifts);
-      return NextResponse.json({ success: true, gift: gifts[giftIndex] }, { status: 200 });
+      throw error;
     }
 
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: gift, error } = await supabase
-      .from('recurring_gifts')
-      .update({
-        ...(amount && { amount }),
-        ...(frequency && { frequency }),
-        ...(nextChargeDate && { next_charge_date: nextChargeDate }),
-      })
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .select()
-      .single();
-
-    if (error) throw error;
     if (!gift) {
       return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
     }
@@ -59,7 +43,7 @@ export async function PATCH(
     logInfo({
       event: 'giving.recurring.updated',
       route: '/api/giving/recurring/[id]',
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { recurringGiftId: id },
     });
 
@@ -71,43 +55,34 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
 
-    if (isDevBypass) {
-      const gifts = getMockRecurringGifts();
-      const filtered = gifts.filter((g) => g.id !== id);
-      
-      if (filtered.length === gifts.length) {
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
+
+    let removed;
+    try {
+      removed = await deleteRecurringGift(getDb(), ctx, id);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
         return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
       }
-
-      setMockRecurringGifts(filtered);
-      return NextResponse.json({ success: true }, { status: 200 });
+      throw error;
     }
 
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!removed) {
+      return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
     }
-
-    const { error } = await supabase
-      .from('recurring_gifts')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', session.user.id);
-
-    if (error) throw error;
 
     logInfo({
       event: 'giving.recurring.deleted',
       route: '/api/giving/recurring/[id]',
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { recurringGiftId: id },
     });
 

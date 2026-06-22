@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import {
+  listThreads,
+  createThread,
+  listUserDisplayNames,
+} from "@/lib/db/access/community";
+
+export const runtime = "nodejs";
 
 interface CreateThreadBody {
   courseId?: string;
@@ -20,72 +28,53 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing courseId" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const db = getDb();
 
-    let query = supabase
-      .from("course_discussion_threads")
-      .select("*")
-      .eq("course_id", courseId)
-      .order("pinned", { ascending: false })
-      .order("last_activity_at", { ascending: false });
+    let threadRows = await listThreads(db, ctx, courseId);
 
     if (cohortId) {
-      query = query.or(`cohort_id.is.null,cohort_id.eq.${cohortId}`);
+      threadRows = threadRows.filter((row) => row.cohortId == null || row.cohortId === cohortId);
     }
 
     if (moduleId) {
-      query = query.eq("module_id", moduleId);
+      threadRows = threadRows.filter((row) => row.moduleId === moduleId);
     }
 
-    const { data: threadRows, error: threadError } = await query;
-    if (threadError) {
-      return NextResponse.json({ error: threadError.message }, { status: 500 });
-    }
+    threadRows = [...threadRows].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? "");
+    });
 
-    const authorIds = Array.from(new Set((threadRows ?? []).map((row) => row.author_user_id)));
-    const { data: userRows, error: userError } =
-      authorIds.length > 0
-        ? await supabase
-            .from("users")
-            .select("id,first_name,last_name")
-            .in("id", authorIds)
-        : { data: [], error: null };
-
-    if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 500 });
-    }
+    const authorIds = Array.from(new Set(threadRows.map((row) => row.authorUserId)));
+    const userRows = await listUserDisplayNames(db, ctx, authorIds);
 
     const userNameMap = new Map<string, string>();
-    for (const row of userRows ?? []) {
-      userNameMap.set(row.id, `${row.first_name} ${row.last_name}`.trim());
+    for (const row of userRows) {
+      userNameMap.set(row.id, `${row.firstName} ${row.lastName}`.trim());
     }
 
     return NextResponse.json(
       {
         success: true,
-        threads: (threadRows ?? []).map((row) => ({
+        threads: threadRows.map((row) => ({
           id: row.id,
-          courseId: row.course_id,
-          cohortId: row.cohort_id,
-          moduleId: row.module_id,
-          authorUserId: row.author_user_id,
-          authorName: userNameMap.get(row.author_user_id) ?? "Favor Partner",
+          courseId: row.courseId,
+          cohortId: row.cohortId,
+          moduleId: row.moduleId,
+          authorUserId: row.authorUserId,
+          authorName: userNameMap.get(row.authorUserId) ?? "Favor Partner",
           title: row.title,
           body: row.body,
           pinned: row.pinned,
           locked: row.locked,
-          replyCount: row.reply_count,
-          lastActivityAt: row.last_activity_at,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
+          replyCount: row.replyCount,
+          lastActivityAt: row.lastActivityAt,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
         })),
       },
       { status: 200 }
@@ -109,60 +98,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Title and body are required" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const db = getDb();
 
-    const { data: inserted, error: insertError } = await supabase
-      .from("course_discussion_threads")
-      .insert({
-        course_id: body.courseId,
-        cohort_id: body.cohortId ?? null,
-        module_id: body.moduleId ?? null,
-        author_user_id: session.user.id,
-        title,
-        body: content,
-      })
-      .select("*")
-      .single();
+    const inserted = await createThread(db, ctx, {
+      courseId: body.courseId,
+      cohortId: body.cohortId ?? null,
+      moduleId: body.moduleId ?? null,
+      title,
+      body: content,
+    });
 
-    if (insertError || !inserted) {
-      return NextResponse.json(
-        { error: insertError?.message ?? "Failed to create thread" },
-        { status: 500 }
-      );
-    }
-
-    const { data: authorRow } = await supabase
-      .from("users")
-      .select("first_name,last_name")
-      .eq("id", session.user.id)
-      .maybeSingle();
+    const authorRows = await listUserDisplayNames(db, ctx, [ctx.userId]);
+    const authorRow = authorRows[0];
 
     return NextResponse.json(
       {
         success: true,
         thread: {
           id: inserted.id,
-          courseId: inserted.course_id,
-          cohortId: inserted.cohort_id,
-          moduleId: inserted.module_id,
-          authorUserId: inserted.author_user_id,
-          authorName: authorRow ? `${authorRow.first_name} ${authorRow.last_name}`.trim() : "Favor Partner",
+          courseId: inserted.courseId,
+          cohortId: inserted.cohortId,
+          moduleId: inserted.moduleId,
+          authorUserId: inserted.authorUserId,
+          authorName: authorRow ? `${authorRow.firstName} ${authorRow.lastName}`.trim() : "Favor Partner",
           title: inserted.title,
           body: inserted.body,
           pinned: inserted.pinned,
           locked: inserted.locked,
-          replyCount: inserted.reply_count,
-          lastActivityAt: inserted.last_activity_at,
-          createdAt: inserted.created_at,
-          updatedAt: inserted.updated_at,
+          replyCount: inserted.replyCount,
+          lastActivityAt: inserted.lastActivityAt,
+          createdAt: inserted.createdAt,
+          updatedAt: inserted.updatedAt,
         },
       },
       { status: 200 }

@@ -1,75 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import {
-  addMockSupportTicket,
-  getMockSupportTickets,
-  recordActivity,
-  getActiveMockUserId,
-  getMockUserById,
-} from "@/lib/mock-store";
-import { mapSupportMessageRow, mapSupportTicketRow } from "@/lib/api/mappers";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { createTicketWithMessage, listMyTicketsWithMessages } from "@/lib/db/access/support";
+import { recordActivity } from "@/lib/db/access/activity";
 import { logError, logInfo } from "@/lib/logger";
-import type { SupportTicket } from "@/types";
+import type { SupportMessage, SupportTicket } from "@/types";
 
-function attachMessages(tickets: SupportTicket[]): SupportTicket[] {
-  return tickets.map((ticket) => ({
-    ...ticket,
-    messages: ticket.messages ?? [],
-  }));
+export const runtime = "nodejs";
+
+type TicketRow = {
+  id: string;
+  requesterUserId: string | null;
+  category: string;
+  subject: string;
+  message: string;
+  status: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  requesterName: string | null;
+  requesterEmail: string | null;
+};
+
+type MessageRow = {
+  id: string;
+  sender: string;
+  message: string;
+  createdAt: string;
+};
+
+function mapTicket(row: TicketRow): SupportTicket {
+  return {
+    id: row.id,
+    requesterUserId: row.requesterUserId ?? undefined,
+    category: row.category,
+    subject: row.subject,
+    message: row.message,
+    status: row.status as SupportTicket["status"],
+    priority: row.priority as SupportTicket["priority"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    resolvedAt: row.resolvedAt ?? undefined,
+    requesterName: row.requesterName ?? undefined,
+    requesterEmail: row.requesterEmail ?? undefined,
+  };
+}
+
+function mapMessage(row: MessageRow): SupportMessage {
+  return {
+    id: row.id,
+    sender: row.sender as SupportMessage["sender"],
+    message: row.message,
+    createdAt: row.createdAt,
+  };
 }
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        tickets: attachMessages(getMockSupportTickets()),
-      });
-    }
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: ticketRows, error: ticketError } = await supabase
-      .from("support_tickets")
-      .select("*")
-      .eq("requester_user_id", session.user.id)
-      .order("created_at", { ascending: false });
-
-    if (ticketError) throw ticketError;
-
-    const ticketIds = (ticketRows ?? []).map((row) => row.id);
-
-    let messageMap = new Map<string, SupportTicket["messages"]>();
-
-    if (ticketIds.length > 0) {
-      const { data: messageRows, error: messageError } = await supabase
-        .from("support_messages")
-        .select("*")
-        .in("ticket_id", ticketIds)
-        .order("created_at", { ascending: true });
-
-      if (messageError) throw messageError;
-
-      messageMap = (messageRows ?? []).reduce((acc, row) => {
-        const list = acc.get(row.ticket_id) ?? [];
-        list.push(mapSupportMessageRow(row));
-        acc.set(row.ticket_id, list);
-        return acc;
-      }, new Map<string, SupportTicket["messages"]>());
-    }
-
-    const tickets = (ticketRows ?? []).map((row) => ({
-      ...mapSupportTicketRow(row),
-      messages: messageMap.get(row.id) ?? [],
+    const rows = await listMyTicketsWithMessages(getDb(), ctx);
+    const tickets = rows.map((row) => ({
+      ...mapTicket(row),
+      messages: row.messages.map(mapMessage),
     }));
 
     return NextResponse.json({ success: true, tickets });
@@ -90,106 +86,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Category, subject, and message are required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const userId = getActiveMockUserId();
-      const user = getMockUserById(userId);
-      const ticket: SupportTicket = {
-        id: `ticket-${Date.now()}`,
-        requesterUserId: userId,
-        requesterName: user ? `${user.firstName} ${user.lastName}` : undefined,
-        requesterEmail: user?.email,
-        category,
-        subject,
-        message,
-        status: "open",
-        priority: "normal",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        messages: [
-          {
-            id: `msg-${Date.now()}`,
-            sender: "partner",
-            message,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      };
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
-      addMockSupportTicket(ticket);
-      recordActivity({
-        id: `activity-${Date.now()}`,
-        type: "support_ticket",
-        userId,
-        createdAt: new Date().toISOString(),
-        metadata: { category, subject },
-      });
+    const created = await createTicketWithMessage(db, ctx, { category, subject, message });
 
-      return NextResponse.json({ success: true, ticket }, { status: 201 });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userId = session.user.id;
-
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("first_name,last_name,email")
-      .eq("id", userId)
-      .maybeSingle();
-
-    const { data: ticketRow, error: ticketError } = await supabase
-      .from("support_tickets")
-      .insert({
-        requester_user_id: userId,
-        requester_name: userRow ? `${userRow.first_name} ${userRow.last_name}` : null,
-        requester_email: userRow?.email ?? null,
-        category,
-        subject,
-        message,
-        status: "open",
-        priority: "normal",
-      })
-      .select("*")
-      .single();
-
-    if (ticketError) throw ticketError;
-
-    const { data: messageRow, error: messageError } = await supabase
-      .from("support_messages")
-      .insert({
-        ticket_id: ticketRow.id,
-        sender: "partner",
-        sender_user_id: userId,
-        message,
-      })
-      .select("*")
-      .single();
-
-    if (messageError) throw messageError;
-
-    await supabase.from("portal_activity_events").insert({
-      user_id: userId,
+    await recordActivity(db, ctx, {
       type: "support_ticket",
       metadata: { category, subject },
     });
 
     const ticket = {
-      ...mapSupportTicketRow(ticketRow),
-      messages: [mapSupportMessageRow(messageRow)],
+      ...mapTicket(created),
+      messages: created.messages.map(mapMessage),
     };
 
     logInfo({
       event: "support.ticket_created",
       route: "/api/support",
-      userId,
+      userId: ctx.userId,
       details: { category },
     });
 

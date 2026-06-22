@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { logAdminAudit } from "@/lib/admin/audit";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import {
+  listCohorts,
+  createCohort,
+  listCohortMembers,
+  upsertCohortMembership,
+  leaveCohort,
+} from "@/lib/db/access/community";
+import { writeAuditLog } from "@/lib/db/access/activity";
+import { AuthorizationError } from "@/lib/db/access/authz";
+
+export const runtime = "nodejs";
 
 interface CohortMutationBody {
   action?: "create" | "join" | "leave";
@@ -20,64 +30,49 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing courseId" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const db = getDb();
 
-    const { data: cohortRows, error: cohortError } = await supabase
-      .from("course_cohorts")
-      .select("*")
-      .eq("course_id", courseId)
-      .eq("is_active", true)
-      .order("starts_at", { ascending: false })
-      .order("created_at", { ascending: false });
+    const cohortRows = (await listCohorts(db, ctx, courseId))
+      .filter((row) => row.isActive)
+      .sort((a, b) => {
+        const aStarts = a.startsAt ?? "";
+        const bStarts = b.startsAt ?? "";
+        if (aStarts !== bStarts) return bStarts.localeCompare(aStarts);
+        const aCreated = a.createdAt ?? "";
+        const bCreated = b.createdAt ?? "";
+        return bCreated.localeCompare(aCreated);
+      });
 
-    if (cohortError) {
-      return NextResponse.json({ error: cohortError.message }, { status: 500 });
-    }
-
-    const cohortIds = (cohortRows ?? []).map((row) => row.id);
-    const { data: memberRows, error: memberError } =
-      cohortIds.length > 0
-        ? await supabase
-            .from("course_cohort_members")
-            .select("cohort_id,user_id,membership_role")
-            .in("cohort_id", cohortIds)
-        : { data: [], error: null };
-
-    if (memberError) {
-      return NextResponse.json({ error: memberError.message }, { status: 500 });
-    }
+    const cohortIds = cohortRows.map((row) => row.id);
+    const memberRows = await listCohortMembers(db, ctx, cohortIds);
 
     const membersByCohort = new Map<string, number>();
     const membershipByCohort = new Map<string, string>();
-    for (const row of memberRows ?? []) {
-      membersByCohort.set(row.cohort_id, (membersByCohort.get(row.cohort_id) ?? 0) + 1);
-      if (row.user_id === session.user.id) {
-        membershipByCohort.set(row.cohort_id, row.membership_role);
+    for (const row of memberRows) {
+      membersByCohort.set(row.cohortId, (membersByCohort.get(row.cohortId) ?? 0) + 1);
+      if (row.userId === ctx.userId) {
+        membershipByCohort.set(row.cohortId, row.membershipRole);
       }
     }
 
     return NextResponse.json(
       {
         success: true,
-        cohorts: (cohortRows ?? []).map((row) => ({
+        cohorts: cohortRows.map((row) => ({
           id: row.id,
-          courseId: row.course_id,
+          courseId: row.courseId,
           name: row.name,
           description: row.description,
-          startsAt: row.starts_at,
-          endsAt: row.ends_at,
-          isActive: row.is_active,
-          createdBy: row.created_by,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
+          startsAt: row.startsAt,
+          endsAt: row.endsAt,
+          isActive: row.isActive,
+          createdBy: row.createdBy,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
           membersCount: membersByCohort.get(row.id) ?? 0,
           isMember: membershipByCohort.has(row.id),
           membershipRole: membershipByCohort.get(row.id) ?? null,
@@ -98,77 +93,63 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing action" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const db = getDb();
 
     if (body.action === "create") {
       if (!body.courseId || !body.name?.trim()) {
         return NextResponse.json({ error: "Missing courseId or name" }, { status: 400 });
       }
 
-      const access = await getAdminAccessContext(supabase, session.user.id);
-      if (!requireAdminPermission(access, "lms:manage")) {
-        return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
-      }
-
-      const { data, error } = await supabase
-        .from("course_cohorts")
-        .insert({
-          course_id: body.courseId,
-          name: body.name.trim(),
-          description: body.description?.trim() || null,
-          starts_at: body.startsAt || null,
-          ends_at: body.endsAt || null,
-          created_by: session.user.id,
-        })
-        .select("*")
-        .single();
-
-      if (error || !data) {
-        return NextResponse.json({ error: error?.message ?? "Failed to create cohort" }, { status: 500 });
-      }
-
-      await supabase.from("course_cohort_members").upsert(
-        {
-          cohort_id: data.id,
-          user_id: session.user.id,
-          membership_role: "instructor",
-        },
-        { onConflict: "cohort_id,user_id" }
-      );
-
-      await logAdminAudit(supabase, {
-        actorUserId: session.user.id,
-        action: "lms.cohort.create",
-        entityType: "cohort",
-        entityId: data.id,
-        details: {
+      let created;
+      try {
+        created = await createCohort(db, ctx, {
           courseId: body.courseId,
           name: body.name.trim(),
-        },
-      });
+          description: body.description?.trim() || null,
+          startsAt: body.startsAt || null,
+          endsAt: body.endsAt || null,
+        });
+      } catch (error) {
+        if (error instanceof AuthorizationError) {
+          return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
+        }
+        throw error;
+      }
+
+      await upsertCohortMembership(db, ctx, created.id, "instructor");
+
+      try {
+        await writeAuditLog(db, ctx, {
+          action: "lms.cohort.create",
+          entityType: "cohort",
+          entityId: created.id,
+          details: {
+            courseId: body.courseId,
+            name: body.name.trim(),
+          },
+        });
+      } catch {
+        // audit logging is best-effort; never fail the request on audit error.
+      }
 
       return NextResponse.json(
         {
           success: true,
           cohort: {
-            id: data.id,
-            courseId: data.course_id,
-            name: data.name,
-            description: data.description,
-            startsAt: data.starts_at,
-            endsAt: data.ends_at,
-            isActive: data.is_active,
-            createdBy: data.created_by,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
+            id: created.id,
+            courseId: created.courseId,
+            name: created.name,
+            description: created.description,
+            startsAt: created.startsAt,
+            endsAt: created.endsAt,
+            isActive: created.isActive,
+            createdBy: created.createdBy,
+            createdAt: created.createdAt,
+            updatedAt: created.updatedAt,
             membersCount: 1,
             isMember: true,
             membershipRole: "instructor",
@@ -183,33 +164,12 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "join") {
-      const { error } = await supabase.from("course_cohort_members").upsert(
-        {
-          cohort_id: body.cohortId,
-          user_id: session.user.id,
-          membership_role: "learner",
-        },
-        { onConflict: "cohort_id,user_id" }
-      );
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
+      await upsertCohortMembership(db, ctx, body.cohortId, "learner");
       return NextResponse.json({ success: true }, { status: 200 });
     }
 
     if (body.action === "leave") {
-      const { error } = await supabase
-        .from("course_cohort_members")
-        .delete()
-        .eq("cohort_id", body.cohortId)
-        .eq("user_id", session.user.id);
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-
+      await leaveCohort(db, ctx, body.cohortId);
       return NextResponse.json({ success: true }, { status: 200 });
     }
 

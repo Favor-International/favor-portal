@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { isDevBypass } from '@/lib/dev-mode';
-import { getMockRecurringGifts, setMockRecurringGifts } from '@/lib/mock-store';
-import type { RecurringGift } from '@/types';
+import { authedRoute } from '@/lib/api/route-auth';
+import { getDb } from '@/lib/db/client';
+import { updateRecurringGiftStatus } from '@/lib/db/access/giving';
+import { AuthorizationError } from '@/lib/db/access/authz';
 import { logError, logInfo } from '@/lib/logger';
+
+export const runtime = 'nodejs';
 
 export async function PATCH(
   request: NextRequest,
@@ -18,39 +20,20 @@ export async function PATCH(
       return NextResponse.json({ error: 'Valid status is required' }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const gifts = getMockRecurringGifts();
-      const giftIndex = gifts.findIndex((g) => g.id === id);
-      
-      if (giftIndex === -1) {
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
+
+    let gift;
+    try {
+      gift = await updateRecurringGiftStatus(getDb(), ctx, id, status);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
         return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
       }
-
-      gifts[giftIndex] = {
-        ...gifts[giftIndex],
-        status: status as RecurringGift['status'],
-      };
-
-      setMockRecurringGifts(gifts);
-      return NextResponse.json({ success: true, gift: gifts[giftIndex] }, { status: 200 });
+      throw error;
     }
 
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: gift, error } = await supabase
-      .from('recurring_gifts')
-      .update({ status })
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .select()
-      .single();
-
-    if (error) throw error;
     if (!gift) {
       return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
     }
@@ -58,7 +41,7 @@ export async function PATCH(
     logInfo({
       event: 'giving.recurring.status_changed',
       route: '/api/giving/recurring/[id]/status',
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { recurringGiftId: id, status },
     });
 

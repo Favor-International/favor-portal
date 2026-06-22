@@ -1,30 +1,45 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { mapGiftRow } from "@/lib/api/mappers";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { listGivingHistory } from "@/lib/db/access/giving";
 import { logError } from "@/lib/logger";
+import type { Gift } from "@/types";
+
+export const runtime = "nodejs";
+
+function mapGiftRow(row: {
+  id: string;
+  userId: string;
+  amount: number;
+  giftDate: string;
+  designation: string;
+  blackbaudGiftId: string | null;
+  isRecurring: boolean | null;
+  receiptSent: boolean | null;
+  source: string | null;
+}): Gift {
+  return {
+    id: row.id,
+    userId: row.userId,
+    amount: Number(row.amount),
+    date: row.giftDate,
+    designation: row.designation,
+    blackbaudGiftId: row.blackbaudGiftId ?? undefined,
+    isRecurring: Boolean(row.isRecurring),
+    receiptSent: Boolean(row.receiptSent),
+    source: (row.source ?? "imported") as Gift["source"],
+  };
+}
 
 export async function GET() {
   try {
-    const supabase = await createClient();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
+    const rows = await listGivingHistory(getDb(), ctx);
 
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data, error } = await supabase
-      .from("giving_cache")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .order("gift_date", { ascending: false });
-
-    if (error) throw error;
-
-    const gifts = (data ?? []).map(mapGiftRow);
+    const gifts = rows.map(mapGiftRow);
     const currentYear = new Date().getFullYear();
     const years = gifts.map((gift) => new Date(gift.date).getFullYear());
 

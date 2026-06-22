@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../client";
 import type { AuthContext } from "../auth-context";
 import { courses, courseModules } from "../schema";
@@ -57,6 +57,19 @@ export async function listModules(db: Db, ctx: AuthContext, courseId: string) {
     .select()
     .from(courseModules)
     .where(eq(courseModules.courseId, courseId))
+    .orderBy(asc(courseModules.sortOrder))
+    .all();
+}
+
+// Modules for a set of already-visible courses (callers must pass course IDs the
+// caller is permitted to see — e.g. the result of listCourses). Returns an empty
+// array when no course IDs are supplied.
+export async function listModulesForCourses(_db: Db, _ctx: AuthContext, courseIds: string[]) {
+  if (courseIds.length === 0) return [];
+  return _db
+    .select()
+    .from(courseModules)
+    .where(inArray(courseModules.courseId, courseIds))
     .orderBy(asc(courseModules.sortOrder))
     .all();
 }

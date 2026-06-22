@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { getThread, updateThread } from "@/lib/db/access/community";
+import { AuthorizationError, canManage } from "@/lib/db/access/authz";
+
+export const runtime = "nodejs";
 
 interface ThreadUpdateBody {
   pinned?: boolean;
@@ -18,37 +22,36 @@ export async function PATCH(
     }
 
     const body = (await request.json()) as ThreadUpdateBody;
-    const updates: Record<string, boolean> = {};
+    const updates: { pinned?: boolean; locked?: boolean } = {};
     if (typeof body.pinned === "boolean") updates.pinned = body.pinned;
     if (typeof body.locked === "boolean") updates.locked = body.locked;
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No updates provided" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const access = await getAdminAccessContext(supabase, session.user.id);
-    if (!requireAdminPermission(access, "lms:manage")) {
+    // Pin/lock is a manager-only operation (lms_manager / admin).
+    if (!canManage(ctx, ["lms_manager"])) {
       return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
     }
 
-    const { data, error } = await supabase
-      .from("course_discussion_threads")
-      .update(updates)
-      .eq("id", threadId)
-      .select("*")
-      .single();
+    const db = getDb();
 
-    if (error || !data) {
-      return NextResponse.json({ error: error?.message ?? "Update failed" }, { status: 500 });
+    try {
+      await updateThread(db, ctx, threadId, updates);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
+      }
+      throw error;
+    }
+
+    const data = await getThread(db, ctx, threadId);
+    if (!data) {
+      return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
 
     return NextResponse.json(
@@ -58,7 +61,7 @@ export async function PATCH(
           id: data.id,
           pinned: data.pinned,
           locked: data.locked,
-          updatedAt: data.updated_at,
+          updatedAt: data.updatedAt,
         },
       },
       { status: 200 }

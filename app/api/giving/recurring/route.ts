@@ -1,38 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { isDevBypass } from '@/lib/dev-mode';
-import { 
-  getMockRecurringGifts, 
-  setMockRecurringGifts,
-  getMockRecurringGiftsForUser 
-} from '@/lib/mock-store';
-import { RecurringGift } from '@/types';
+import { authedRoute } from '@/lib/api/route-auth';
+import { getDb } from '@/lib/db/client';
+import { listRecurringGifts, createRecurringGift } from '@/lib/db/access/giving';
 import { logError, logInfo } from '@/lib/logger';
 
-export async function GET(request: NextRequest) {
+export const runtime = 'nodejs';
+
+export async function GET() {
   try {
-    if (isDevBypass) {
-      // Get userId from query param in dev mode
-      const { searchParams } = new URL(request.url);
-      const userId = searchParams.get('userId') || 'mock-user-id';
-      const gifts = getMockRecurringGiftsForUser(userId);
-      return NextResponse.json({ success: true, gifts }, { status: 200 });
-    }
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: gifts, error } = await supabase
-      .from('recurring_gifts')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
+    const gifts = await listRecurringGifts(getDb(), ctx);
 
     return NextResponse.json({ success: true, gifts: gifts || [] }, { status: 200 });
   } catch (error) {
@@ -54,38 +34,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid frequency is required' }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const { searchParams } = new URL(request.url);
-      const userId = searchParams.get('userId') || 'mock-user-id';
-      
-      const newGift: RecurringGift = {
-        id: `rec-${Date.now()}`,
-        userId,
-        amount,
-        frequency,
-        nextChargeDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        stripeSubscriptionId: `mock-sub-${Date.now()}`,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-      };
-
-      const existing = getMockRecurringGifts();
-      setMockRecurringGifts([...existing, newGift]);
-
-      return NextResponse.json({ success: true, gift: newGift }, { status: 201 });
-    }
-
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
 
     // Calculate next charge date based on frequency
     const now = new Date();
     const nextChargeDate = new Date();
-    
+
     switch (frequency) {
       case 'monthly':
         nextChargeDate.setMonth(now.getMonth() + 1);
@@ -98,25 +54,18 @@ export async function POST(request: NextRequest) {
         break;
     }
 
-    const { data: gift, error } = await supabase
-      .from('recurring_gifts')
-      .insert({
-        user_id: session.user.id,
-        amount,
-        frequency,
-        next_charge_date: nextChargeDate.toISOString(),
-        stripe_subscription_id: `pending-${Date.now()}`, // Will be updated by Stripe webhook
-        status: 'active',
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
+    const gift = await createRecurringGift(getDb(), ctx, {
+      amount,
+      frequency,
+      nextChargeDate: nextChargeDate.toISOString(),
+      stripeSubscriptionId: `pending-${Date.now()}`, // Will be updated by Stripe webhook
+      status: 'active',
+    });
 
     logInfo({
       event: 'giving.recurring.created',
       route: '/api/giving/recurring',
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { frequency, amount },
     });
 

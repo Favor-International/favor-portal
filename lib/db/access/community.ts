@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../client";
 import type { AuthContext } from "../auth-context";
 import {
@@ -6,6 +6,7 @@ import {
   courseCohortMembers,
   courseDiscussionThreads,
   courseDiscussionReplies,
+  users,
 } from "../schema";
 import { AuthorizationError, canManage } from "./authz";
 
@@ -121,6 +122,53 @@ export async function listMyMemberships(db: Db, ctx: AuthContext) {
     .all();
 }
 
+// Member rows for a set of cohorts — used to compute per-cohort member counts
+// and the current user's membership role. Any authenticated user may read.
+export async function listCohortMembers(db: Db, ctx: AuthContext, cohortIds: string[]) {
+  if (cohortIds.length === 0) return [];
+  return db
+    .select({
+      cohortId: courseCohortMembers.cohortId,
+      userId: courseCohortMembers.userId,
+      membershipRole: courseCohortMembers.membershipRole,
+    })
+    .from(courseCohortMembers)
+    .where(inArray(courseCohortMembers.cohortId, cohortIds))
+    .all();
+}
+
+// Self-service upsert join with an explicit membership role (defaults to
+// "learner"). Mirrors the original onConflict(cohort_id,user_id) upsert.
+export async function upsertCohortMembership(
+  db: Db,
+  ctx: AuthContext,
+  cohortId: string,
+  membershipRole: "learner" | "mentor" | "instructor" = "learner",
+) {
+  const existing = await db
+    .select()
+    .from(courseCohortMembers)
+    .where(and(eq(courseCohortMembers.cohortId, cohortId), eq(courseCohortMembers.userId, ctx.userId)))
+    .get();
+  if (existing) {
+    await db
+      .update(courseCohortMembers)
+      .set({ membershipRole })
+      .where(and(eq(courseCohortMembers.cohortId, cohortId), eq(courseCohortMembers.userId, ctx.userId)));
+    return { ...existing, membershipRole };
+  }
+  const now = new Date().toISOString();
+  const row = {
+    id: crypto.randomUUID(),
+    cohortId,
+    userId: ctx.userId,
+    membershipRole,
+    joinedAt: now,
+  };
+  await db.insert(courseCohortMembers).values(row);
+  return row;
+}
+
 // ---------------------------------------------------------------------------
 // discussion threads (course_discussion_threads) — course-scoped read;
 // author-scoped writes (author OR lms_manager may update/delete).
@@ -132,6 +180,17 @@ export async function listThreads(db: Db, ctx: AuthContext, courseId: string) {
     .where(eq(courseDiscussionThreads.courseId, courseId))
     .orderBy(desc(courseDiscussionThreads.lastActivityAt))
     .all();
+}
+
+// Course/cohort-visible single-thread read (any authenticated user may read a
+// thread; mutations remain author/manager-scoped via updateThread/deleteThread).
+export async function getThread(db: Db, ctx: AuthContext, id: string) {
+  const thread = await db
+    .select()
+    .from(courseDiscussionThreads)
+    .where(eq(courseDiscussionThreads.id, id))
+    .get();
+  return thread ?? null;
 }
 
 export async function createThread(db: Db, ctx: AuthContext, input: NewThread) {
@@ -245,7 +304,8 @@ export async function createReply(db: Db, ctx: AuthContext, threadId: string, bo
     threadId,
     authorUserId: ctx.userId,
     body,
-    isInstructorReply: false,
+    // Replies authored by an lms_manager / admin are flagged as instructor replies.
+    isInstructorReply: canManage(ctx, ["lms_manager"]),
     createdAt: now,
     updatedAt: now,
   };
@@ -283,4 +343,17 @@ export async function deleteReply(db: Db, ctx: AuthContext, id: string) {
   }
   await db.delete(courseDiscussionReplies).where(eq(courseDiscussionReplies.id, id));
   await recomputeThreadMetrics(db, existing.threadId);
+}
+
+// ---------------------------------------------------------------------------
+// author display names — resolve first/last names for a set of user ids so
+// threads/replies can render an authorName. Any authenticated user may read.
+// ---------------------------------------------------------------------------
+export async function listUserDisplayNames(db: Db, ctx: AuthContext, userIds: string[]) {
+  if (userIds.length === 0) return [];
+  return db
+    .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+    .from(users)
+    .where(inArray(users.id, userIds))
+    .all();
 }

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getDb } from "@/lib/db/client";
+import { getCertificateByToken } from "@/lib/db/access/learning";
+
+export const runtime = "nodejs";
 
 export async function GET(
   _request: Request,
@@ -11,29 +14,24 @@ export async function GET(
       return NextResponse.json({ valid: false, error: "Missing token" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("user_course_certificates")
-      .select("issued_at,completion_rate,certificate_url,verification_token,certificate_number,metadata")
-      .eq("verification_token", token)
-      .maybeSingle();
+    const data = await getCertificateByToken(getDb(), token);
 
-    if (error || !data) {
+    if (!data) {
       return NextResponse.json({ valid: false, error: "Certificate not found" }, { status: 404 });
     }
 
     const metadata =
       data.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
-        ? data.metadata
+        ? (data.metadata as Record<string, unknown>)
         : {};
 
     return NextResponse.json(
       {
         valid: true,
-        issuedAt: data.issued_at,
-        completionRate: data.completion_rate,
-        certificateUrl: data.certificate_url,
-        certificateNumber: data.certificate_number,
+        issuedAt: data.issuedAt,
+        completionRate: data.completionRate,
+        certificateUrl: data.certificateUrl,
+        certificateNumber: data.certificateNumber,
         recipientName:
           typeof metadata["recipientName"] === "string"
             ? (metadata["recipientName"] as string)

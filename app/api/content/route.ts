@@ -1,38 +1,63 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { getMockContent } from "@/lib/mock-store";
-import { mapContentRow } from "@/lib/api/mappers";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { listContent } from "@/lib/db/access/content";
 import { logError } from "@/lib/logger";
+import type { ContentItem } from "@/types";
+
+export const runtime = "nodejs";
+
+type ContentRow = {
+  id: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  type: string;
+  accessLevel: string;
+  author: string;
+  tags: string[];
+  coverImage: string | null;
+  fileUrl: string | null;
+  status: string;
+  publishedAt: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
+function mapContentRow(row: ContentRow): ContentItem {
+  return {
+    id: row.id,
+    title: row.title,
+    excerpt: row.excerpt,
+    body: row.body,
+    type: row.type as ContentItem["type"],
+    accessLevel: row.accessLevel as ContentItem["accessLevel"],
+    date: row.publishedAt ?? row.updatedAt ?? row.createdAt,
+    author: row.author,
+    tags: row.tags ?? [],
+    coverImage: row.coverImage ?? undefined,
+    fileUrl: row.fileUrl ?? undefined,
+    status: row.status as ContentItem["status"],
+  };
+}
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      const items = getMockContent().map((item) => ({ ...item, status: item.status ?? "published" }));
-      return NextResponse.json({ success: true, items }, { status: 200 });
-    }
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data, error } = await supabase
-      .from("portal_content")
-      .select("*")
-      .order("published_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
+    const rows = await listContent(getDb(), ctx);
+    const sorted = [...rows].sort((a, b) => {
+      const aPub = a.publishedAt ?? "";
+      const bPub = b.publishedAt ?? "";
+      if (aPub !== bPub) return bPub.localeCompare(aPub);
+      return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+    });
 
     return NextResponse.json({
       success: true,
-      items: (data ?? []).map(mapContentRow),
+      items: sorted.map(mapContentRow),
     });
   } catch (error) {
     logError({ event: "content.fetch_failed", route: "/api/content", error });

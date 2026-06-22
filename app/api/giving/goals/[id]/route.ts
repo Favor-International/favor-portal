@@ -1,31 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import {
-  deleteMockGivingGoal,
-  getActiveMockUserId,
-  getMockGivingGoalsForUser,
-  updateMockGivingGoal,
-} from "@/lib/mock-store";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { updateGivingGoal, deleteGivingGoal, type UpdateGivingGoal } from "@/lib/db/access/giving-goals";
+import { AuthorizationError } from "@/lib/db/access/authz";
 import { logError, logInfo } from "@/lib/logger";
 import type { GivingGoal } from "@/types";
 
+export const runtime = "nodejs";
+
 const VALID_CATEGORIES: GivingGoal["category"][] = ["annual", "project", "monthly", "custom"];
 
-function parseGoalUpdate(body: unknown) {
+function parseGoalUpdate(body: unknown): UpdateGivingGoal {
   const payload = body as Record<string, unknown>;
-  const updates: {
-    name?: string;
-    target_amount?: number;
-    current_amount?: number;
-    deadline?: string;
-    category?: GivingGoal["category"];
-    description?: string | null;
-  } = {};
+  const updates: UpdateGivingGoal = {};
 
   if (typeof payload?.name === "string") updates.name = payload.name.trim();
-  if (payload?.targetAmount !== undefined) updates.target_amount = Number(payload.targetAmount);
-  if (payload?.currentAmount !== undefined) updates.current_amount = Number(payload.currentAmount);
+  if (payload?.targetAmount !== undefined) updates.targetAmount = Number(payload.targetAmount);
+  if (payload?.currentAmount !== undefined) updates.currentAmount = Number(payload.currentAmount);
   if (typeof payload?.deadline === "string") updates.deadline = payload.deadline;
   if (payload?.category !== undefined) updates.category = payload.category as GivingGoal["category"];
   if (payload?.description !== undefined) {
@@ -51,70 +42,38 @@ export async function PATCH(
     if (updates.name !== undefined && !updates.name) {
       return NextResponse.json({ error: "Goal name cannot be empty" }, { status: 400 });
     }
-    if (updates.target_amount !== undefined && (!Number.isFinite(updates.target_amount) || updates.target_amount <= 0)) {
+    if (updates.targetAmount !== undefined && (!Number.isFinite(updates.targetAmount) || updates.targetAmount <= 0)) {
       return NextResponse.json({ error: "Target amount must be greater than 0" }, { status: 400 });
     }
-    if (updates.current_amount !== undefined && (!Number.isFinite(updates.current_amount) || updates.current_amount < 0)) {
+    if (updates.currentAmount !== undefined && (!Number.isFinite(updates.currentAmount) || updates.currentAmount < 0)) {
       return NextResponse.json({ error: "Current amount must be 0 or higher" }, { status: 400 });
     }
     if (updates.category !== undefined && !VALID_CATEGORIES.includes(updates.category)) {
       return NextResponse.json({ error: "Invalid goal category" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const userId = getActiveMockUserId();
-      const owned = getMockGivingGoalsForUser(userId).some((goal) => goal.id === id);
-      if (!owned) {
-        return NextResponse.json({ error: "Goal not found" }, { status: 404 });
-      }
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-      const updated = updateMockGivingGoal(id, {
-        ...(updates.name !== undefined ? { name: updates.name } : {}),
-        ...(updates.target_amount !== undefined ? { targetAmount: updates.target_amount } : {}),
-        ...(updates.current_amount !== undefined ? { currentAmount: updates.current_amount } : {}),
-        ...(updates.deadline !== undefined ? { deadline: updates.deadline } : {}),
-        ...(updates.category !== undefined ? { category: updates.category } : {}),
-        ...(updates.description !== undefined ? { description: updates.description ?? undefined } : {}),
-      });
-
-      if (!updated) {
-        return NextResponse.json({ error: "Goal not found" }, { status: 404 });
-      }
-
-      return NextResponse.json({ success: true, goal: updated });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data, error } = await supabase
-      .from("user_giving_goals")
-      .update({
-        ...updates,
-      })
-      .eq("id", id)
-      .eq("user_id", session.user.id)
-      .select("*")
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") {
+    let data;
+    try {
+      data = await updateGivingGoal(getDb(), ctx, id, updates);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
         return NextResponse.json({ error: "Goal not found" }, { status: 404 });
       }
       throw error;
     }
 
+    if (!data) {
+      return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+
     logInfo({
       event: "giving.goal.updated",
       route: "/api/giving/goals/[id]",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { goalId: id },
     });
 
@@ -122,15 +81,15 @@ export async function PATCH(
       success: true,
       goal: {
         id: data.id,
-        userId: data.user_id,
+        userId: data.userId,
         name: data.name,
-        targetAmount: Number(data.target_amount),
-        currentAmount: Number(data.current_amount),
+        targetAmount: Number(data.targetAmount),
+        currentAmount: Number(data.currentAmount),
         deadline: data.deadline,
         category: data.category as GivingGoal["category"],
         description: data.description ?? undefined,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
       },
     });
   } catch (error) {
@@ -146,43 +105,23 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    if (isDevBypass) {
-      const userId = getActiveMockUserId();
-      const owned = getMockGivingGoalsForUser(userId).some((goal) => goal.id === id);
-      if (!owned) {
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+
+    try {
+      await deleteGivingGoal(getDb(), ctx, id);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
         return NextResponse.json({ error: "Goal not found" }, { status: 404 });
       }
-
-      const removed = deleteMockGivingGoal(id);
-      if (!removed) {
-        return NextResponse.json({ error: "Goal not found" }, { status: 404 });
-      }
-
-      return NextResponse.json({ success: true });
+      throw error;
     }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { error } = await supabase
-      .from("user_giving_goals")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", session.user.id);
-
-    if (error) throw error;
 
     logInfo({
       event: "giving.goal.deleted",
       route: "/api/giving/goals/[id]",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { goalId: id },
     });
 

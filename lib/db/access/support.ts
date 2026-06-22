@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../client";
 import type { AuthContext } from "../auth-context";
-import { supportTickets, supportMessages } from "../schema";
+import { supportTickets, supportMessages, users } from "../schema";
 import { AuthorizationError, canManage } from "./authz";
 
 type SupportTicket = typeof supportTickets.$inferSelect;
@@ -52,6 +52,69 @@ export async function listMyTickets(db: Db, ctx: AuthContext) {
     .where(eq(supportTickets.requesterUserId, ctx.userId))
     .orderBy(desc(supportTickets.createdAt))
     .all();
+}
+
+// Owner-scoped: the caller's tickets, each with its messages (oldest first)
+// attached under `messages`.
+export async function listMyTicketsWithMessages(db: Db, ctx: AuthContext) {
+  const tickets = await db
+    .select()
+    .from(supportTickets)
+    .where(eq(supportTickets.requesterUserId, ctx.userId))
+    .orderBy(desc(supportTickets.createdAt))
+    .all();
+  if (tickets.length === 0) return [];
+  const ticketIds = tickets.map((t) => t.id);
+  const messages = await db
+    .select()
+    .from(supportMessages)
+    .where(inArray(supportMessages.ticketId, ticketIds))
+    .orderBy(asc(supportMessages.createdAt))
+    .all();
+  const byTicket = new Map<string, typeof messages>();
+  for (const m of messages) {
+    const list = byTicket.get(m.ticketId) ?? [];
+    list.push(m);
+    byTicket.set(m.ticketId, list);
+  }
+  return tickets.map((t) => ({ ...t, messages: byTicket.get(t.id) ?? [] }));
+}
+
+// Owner-scoped: create a ticket stamped with the requester's name/email and seed
+// it with the requester's opening message. Returns the ticket with its single
+// `partner` message attached.
+export async function createTicketWithMessage(db: Db, ctx: AuthContext, input: NewTicket) {
+  const requester = await db
+    .select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+    .from(users)
+    .where(eq(users.id, ctx.userId))
+    .get();
+  const now = new Date().toISOString();
+  const ticket = {
+    id: crypto.randomUUID(),
+    requesterUserId: ctx.userId,
+    requesterName: requester ? `${requester.firstName} ${requester.lastName}` : null,
+    requesterEmail: requester?.email ?? null,
+    category: input.category,
+    subject: input.subject,
+    message: input.message,
+    status: "open" as TicketStatus,
+    priority: input.priority ?? "normal",
+    createdAt: now,
+    updatedAt: now,
+    resolvedAt: null,
+  };
+  await db.insert(supportTickets).values(ticket);
+  const message = {
+    id: crypto.randomUUID(),
+    ticketId: ticket.id,
+    sender: "partner" as const,
+    senderUserId: ctx.userId,
+    message: input.message,
+    createdAt: now,
+  };
+  await db.insert(supportMessages).values(message);
+  return { ...ticket, messages: [message] };
 }
 
 export async function listAllTickets(db: Db, ctx: AuthContext) {

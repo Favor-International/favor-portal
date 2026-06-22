@@ -1,159 +1,82 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import type { Tables } from '@/types/database';
-import { COURSE_ACCESS_LEVELS } from '@/lib/constants';
+import { NextResponse } from "next/server";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { listCourses, listModulesForCourses } from "@/lib/db/access/courses";
+import { listProgress } from "@/lib/db/access/learning";
+
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const supabase = await createClient();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
-    // Verify authentication
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    const courses = await listCourses(db, ctx);
+    const courseIds = courses.map((course) => course.id);
+    const modules = await listModulesForCourses(db, ctx, courseIds);
+    const moduleIds = new Set(modules.map((module) => module.id));
 
-    if (authError || !session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    let progress: Awaited<ReturnType<typeof listProgress>> = [];
+    if (moduleIds.size > 0) {
+      const allProgress = await listProgress(db, ctx);
+      progress = allProgress.filter((p) => moduleIds.has(p.moduleId));
     }
 
-    // Get user's constituent type for access level filtering
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('constituent_type')
-      .eq('id', session.user.id)
-      .single();
-
-    if (userError) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Fetch courses from Supabase
-    // Filter by access level based on user's constituent type
-    let query = supabase
-      .from('courses')
-      .select('*')
-      .order('sort_order', { ascending: true });
-
-    const constituentType = userData.constituent_type;
-    const allowedAccessLevels = Object.entries(COURSE_ACCESS_LEVELS)
-      .filter(([, allowedTypes]) => allowedTypes.includes(constituentType))
-      .map(([accessLevel]) => accessLevel);
-
-    if (allowedAccessLevels.length > 0) {
-      query = query.in('access_level', allowedAccessLevels);
-    } else {
-      return NextResponse.json(
-        { success: true, courses: [], modules: [], progress: [] },
-        { status: 200 }
-      );
-    }
-
-    query = query
-      .eq('status', 'published')
-      .eq('is_locked', false);
-
-    const { data: courses, error: coursesError } = await query;
-
-    if (coursesError) {
-      console.error('Courses fetch error:', coursesError);
-      return NextResponse.json(
-        { error: 'Failed to fetch courses' },
-        { status: 500 }
-      );
-    }
-
-    const courseIds = (courses ?? []).map((course) => course.id);
-
-    // Fetch modules for accessible courses
-    const { data: modules, error: modulesError } = await supabase
-      .from('course_modules')
-      .select('*')
-      .in('course_id', courseIds)
-      .order('sort_order', { ascending: true });
-
-    if (modulesError) {
-      console.error('Modules fetch error:', modulesError);
-      return NextResponse.json(
-        { error: 'Failed to fetch course modules' },
-        { status: 500 }
-      );
-    }
-
-    const moduleIds = (modules ?? []).map((module) => module.id);
-
-    let progress: Tables<'user_course_progress'>[] | null = [];
-    if (moduleIds.length > 0) {
-      const { data: progressData, error: progressError } = await supabase
-        .from('user_course_progress')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .in('module_id', moduleIds);
-
-      if (progressError) {
-        console.error('Progress fetch error:', progressError);
-      } else {
-        progress = progressData;
-      }
-    }
-
-    // Format the response
-    const formattedCourses = courses?.map((course: Tables<'courses'>) => ({
+    const formattedCourses = courses.map((course) => ({
       id: course.id,
       title: course.title,
       description: course.description,
-      thumbnailUrl: course.thumbnail_url,
-      accessLevel: course.access_level,
-      sortOrder: course.sort_order,
-      status: course.status ?? 'published',
-      isLocked: Boolean(course.is_locked),
-      isPaid: Boolean(course.is_paid),
+      thumbnailUrl: course.thumbnailUrl,
+      accessLevel: course.accessLevel,
+      sortOrder: course.sortOrder,
+      status: course.status ?? "published",
+      isLocked: Boolean(course.isLocked),
+      isPaid: Boolean(course.isPaid),
       price: Number(course.price ?? 0),
       tags: course.tags,
-      coverImage: course.cover_image,
-      enforceSequential: course.enforce_sequential ?? true,
-      publishAt: course.publish_at,
-      unpublishAt: course.unpublish_at,
-      createdAt: course.created_at,
-    })) || [];
+      coverImage: course.coverImage,
+      enforceSequential: course.enforceSequential ?? true,
+      publishAt: course.publishAt,
+      unpublishAt: course.unpublishAt,
+      createdAt: course.createdAt,
+    }));
 
-    const formattedModules = modules?.map((module: Tables<'course_modules'>) => ({
+    const formattedModules = modules.map((module) => ({
       id: module.id,
-      courseId: module.course_id,
+      courseId: module.courseId,
       title: module.title,
       description: module.description,
-      cloudflareVideoId: module.cloudflare_video_id,
-      sortOrder: module.sort_order,
-      durationSeconds: module.duration_seconds,
-      type: module.module_type ?? 'video',
-      resourceUrl: module.resource_url,
+      cloudflareVideoId: module.cloudflareVideoId,
+      sortOrder: module.sortOrder,
+      durationSeconds: module.durationSeconds,
+      type: module.moduleType ?? "video",
+      resourceUrl: module.resourceUrl,
       notes: module.notes,
-      quizPayload: module.quiz_payload,
-      passThreshold: module.pass_threshold ?? 70,
-    })) || [];
+      quizPayload: module.quizPayload,
+      passThreshold: module.passThreshold ?? 70,
+    }));
 
-    const formattedProgress = progress?.map((p) => ({
-      moduleId: p.module_id,
+    const formattedProgress = progress.map((p) => ({
+      moduleId: p.moduleId,
       completed: p.completed,
-      completedAt: p.completed_at,
-      watchTimeSeconds: p.watch_time_seconds,
-      lastWatchedAt: p.last_watched_at,
-    })) || [];
+      completedAt: p.completedAt,
+      watchTimeSeconds: p.watchTimeSeconds,
+      lastWatchedAt: p.lastWatchedAt,
+    }));
 
-    return NextResponse.json({
-      success: true,
-      courses: formattedCourses,
-      modules: formattedModules,
-      progress: formattedProgress,
-    }, { status: 200 });
-  } catch (error) {
-    console.error('Courses route error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      {
+        success: true,
+        courses: formattedCourses,
+        modules: formattedModules,
+        progress: formattedProgress,
+      },
+      { status: 200 }
     );
+  } catch (error) {
+    console.error("Courses route error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

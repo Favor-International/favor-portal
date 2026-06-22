@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import {
+  listReplies,
+  createReply,
+  listUserDisplayNames,
+} from "@/lib/db/access/community";
+import { AuthorizationError } from "@/lib/db/access/authz";
+
+export const runtime = "nodejs";
 
 interface CreateReplyBody {
   body?: string;
@@ -16,56 +24,34 @@ export async function GET(
       return NextResponse.json({ error: "Missing threadId" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const db = getDb();
 
-    const { data: replyRows, error: replyError } = await supabase
-      .from("course_discussion_replies")
-      .select("*")
-      .eq("thread_id", threadId)
-      .order("created_at", { ascending: true });
+    const replyRows = await listReplies(db, ctx, threadId);
 
-    if (replyError) {
-      return NextResponse.json({ error: replyError.message }, { status: 500 });
-    }
-
-    const authorIds = Array.from(new Set((replyRows ?? []).map((row) => row.author_user_id)));
-    const { data: userRows, error: userError } =
-      authorIds.length > 0
-        ? await supabase
-            .from("users")
-            .select("id,first_name,last_name")
-            .in("id", authorIds)
-        : { data: [], error: null };
-
-    if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 500 });
-    }
+    const authorIds = Array.from(new Set(replyRows.map((row) => row.authorUserId)));
+    const userRows = await listUserDisplayNames(db, ctx, authorIds);
 
     const userNameMap = new Map<string, string>();
-    for (const row of userRows ?? []) {
-      userNameMap.set(row.id, `${row.first_name} ${row.last_name}`.trim());
+    for (const row of userRows) {
+      userNameMap.set(row.id, `${row.firstName} ${row.lastName}`.trim());
     }
 
     return NextResponse.json(
       {
         success: true,
-        replies: (replyRows ?? []).map((row) => ({
+        replies: replyRows.map((row) => ({
           id: row.id,
-          threadId: row.thread_id,
-          authorUserId: row.author_user_id,
-          authorName: userNameMap.get(row.author_user_id) ?? "Favor Partner",
+          threadId: row.threadId,
+          authorUserId: row.authorUserId,
+          authorName: userNameMap.get(row.authorUserId) ?? "Favor Partner",
           body: row.body,
-          isInstructorReply: row.is_instructor_reply,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
+          isInstructorReply: row.isInstructorReply,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
         })),
       },
       { status: 200 }
@@ -92,55 +78,37 @@ export async function POST(
       return NextResponse.json({ error: "Reply body is required" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const db = getDb();
+
+    let inserted;
+    try {
+      inserted = await createReply(db, ctx, threadId, content);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
     }
 
-    const access = await getAdminAccessContext(supabase, session.user.id);
-    const isInstructorReply = requireAdminPermission(access, "lms:manage");
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("course_discussion_replies")
-      .insert({
-        thread_id: threadId,
-        author_user_id: session.user.id,
-        body: content,
-        is_instructor_reply: isInstructorReply,
-      })
-      .select("*")
-      .single();
-
-    if (insertError || !inserted) {
-      return NextResponse.json(
-        { error: insertError?.message ?? "Failed to create reply" },
-        { status: 500 }
-      );
-    }
-
-    const { data: authorRow } = await supabase
-      .from("users")
-      .select("first_name,last_name")
-      .eq("id", session.user.id)
-      .maybeSingle();
+    const authorRows = await listUserDisplayNames(db, ctx, [ctx.userId]);
+    const authorRow = authorRows[0];
 
     return NextResponse.json(
       {
         success: true,
         reply: {
           id: inserted.id,
-          threadId: inserted.thread_id,
-          authorUserId: inserted.author_user_id,
-          authorName: authorRow ? `${authorRow.first_name} ${authorRow.last_name}`.trim() : "Favor Partner",
+          threadId: inserted.threadId,
+          authorUserId: inserted.authorUserId,
+          authorName: authorRow ? `${authorRow.firstName} ${authorRow.lastName}`.trim() : "Favor Partner",
           body: inserted.body,
-          isInstructorReply: inserted.is_instructor_reply,
-          createdAt: inserted.created_at,
-          updatedAt: inserted.updated_at,
+          isInstructorReply: inserted.isInstructorReply,
+          createdAt: inserted.createdAt,
+          updatedAt: inserted.updatedAt,
         },
       },
       { status: 200 }
