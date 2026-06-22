@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { recordSendLog } from "@/lib/db/access/comms";
+import { AuthorizationError } from "@/lib/db/access/authz";
 import { sendSMS } from "@/lib/twilio/client";
 import { logError } from "@/lib/logger";
+
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,29 +18,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "to and body are required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const result = await sendSMS(to, message);
-      return NextResponse.json({ success: true, id: result.sid });
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
+
+    let result;
+    try {
+      result = await sendSMS(to, message);
+    } catch (dispatchError) {
+      await recordSendLog(db, ctx, {
+        templateName: "Direct SMS",
+        channel: "sms",
+        recipient: to,
+        status: "failed",
+        metadata: {
+          provider: "twilio",
+          error: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
+        },
+      });
+      throw dispatchError;
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
+    await recordSendLog(db, ctx, {
+      templateName: "Direct SMS",
+      channel: "sms",
+      recipient: to,
+      status: "sent",
+      metadata: { provider: "twilio", providerMessageId: result.sid },
+    });
 
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManageComms = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManageComms) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const result = await sendSMS(to, message);
     return NextResponse.json({ success: true, id: result.sid });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "comms.sms.send_failed", route: "/api/comms/sms", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

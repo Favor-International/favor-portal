@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { recordSendLog } from "@/lib/db/access/comms";
+import { AuthorizationError } from "@/lib/db/access/authz";
 import { sendEmail } from "@/lib/resend/client";
 import { logError } from "@/lib/logger";
+
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,40 +24,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (isDevBypass) {
-      const result = await sendEmail({
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
+
+    const recipient = Array.isArray(to) ? to.join(", ") : String(to);
+
+    let result;
+    try {
+      result = await sendEmail({
         to,
         subject,
         from,
         ...(html ? { html, text } : { text: text as string }),
       });
-      return NextResponse.json({ success: true, id: result.id });
+    } catch (dispatchError) {
+      await recordSendLog(db, ctx, {
+        templateName: subject,
+        channel: "email",
+        recipient,
+        status: "failed",
+        metadata: {
+          provider: "resend",
+          error: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
+        },
+      });
+      throw dispatchError;
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManageComms = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManageComms) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const result = await sendEmail({
-      to,
-      subject,
-      from,
-      ...(html ? { html, text } : { text: text as string }),
+    await recordSendLog(db, ctx, {
+      templateName: subject,
+      channel: "email",
+      recipient,
+      status: "sent",
+      metadata: { provider: "resend", providerMessageId: result.id ?? null },
     });
 
     return NextResponse.json({ success: true, id: result.id });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "comms.email.send_failed", route: "/api/comms/email", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

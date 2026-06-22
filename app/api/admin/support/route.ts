@@ -1,72 +1,79 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
 import {
-  getMockSupportTickets,
-  updateMockSupportTicket,
-} from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapSupportMessageRow, mapSupportTicketRow } from "@/lib/api/mappers";
+  addMessage,
+  getTicket,
+  listAllTicketsWithMessages,
+  updateTicketStatus,
+} from "@/lib/db/access/support";
+import { AuthorizationError } from "@/lib/db/access/authz";
 import { logError, logInfo } from "@/lib/logger";
-import type { SupportTicket } from "@/types";
+import type { SupportMessage, SupportTicket } from "@/types";
+
+export const runtime = "nodejs";
 
 type TicketStatus = SupportTicket["status"];
 const VALID_STATUSES: TicketStatus[] = ["open", "in_progress", "resolved"];
 
+type TicketRow = {
+  id: string;
+  requesterUserId: string | null;
+  category: string;
+  subject: string;
+  message: string;
+  status: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  requesterName: string | null;
+  requesterEmail: string | null;
+};
+
+type MessageRow = {
+  id: string;
+  sender: string;
+  message: string;
+  createdAt: string;
+};
+
+function mapTicket(row: TicketRow): SupportTicket {
+  return {
+    id: row.id,
+    requesterUserId: row.requesterUserId ?? undefined,
+    category: row.category,
+    subject: row.subject,
+    message: row.message,
+    status: row.status as SupportTicket["status"],
+    priority: row.priority as SupportTicket["priority"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    resolvedAt: row.resolvedAt ?? undefined,
+    requesterName: row.requesterName ?? undefined,
+    requesterEmail: row.requesterEmail ?? undefined,
+  };
+}
+
+function mapMessage(row: MessageRow): SupportMessage {
+  return {
+    id: row.id,
+    sender: row.sender as SupportMessage["sender"],
+    message: row.message,
+    createdAt: row.createdAt,
+  };
+}
+
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        tickets: getMockSupportTickets(),
-      });
-    }
+    const auth = await adminRoute("support:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "support:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data: ticketRows, error: ticketError } = await supabase
-      .from("support_tickets")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (ticketError) throw ticketError;
-
-    const ticketIds = (ticketRows ?? []).map((row) => row.id);
-    let messagesByTicket = new Map<string, SupportTicket["messages"]>();
-
-    if (ticketIds.length > 0) {
-      const { data: messageRows, error: messageError } = await supabase
-        .from("support_messages")
-        .select("*")
-        .in("ticket_id", ticketIds)
-        .order("created_at", { ascending: true });
-
-      if (messageError) throw messageError;
-
-      messagesByTicket = (messageRows ?? []).reduce((acc, row) => {
-        const list = acc.get(row.ticket_id) ?? [];
-        list.push(mapSupportMessageRow(row));
-        acc.set(row.ticket_id, list);
-        return acc;
-      }, new Map<string, SupportTicket["messages"]>());
-    }
-
-    const tickets = (ticketRows ?? []).map((row) => ({
-      ...mapSupportTicketRow(row),
-      messages: messagesByTicket.get(row.id) ?? [],
+    const rows = await listAllTicketsWithMessages(getDb(), ctx);
+    const tickets = rows.map((row) => ({
+      ...mapTicket(row),
+      messages: row.messages.map(mapMessage),
     }));
 
     return NextResponse.json({ success: true, tickets });
@@ -86,55 +93,38 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Valid ticketId and status are required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const updated = updateMockSupportTicket(ticketId, {
-        status,
-        updatedAt: new Date().toISOString(),
-        resolvedAt: status === "resolved" ? new Date().toISOString() : undefined,
-      });
+    const auth = await adminRoute("support:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
-      if (!updated) {
+    let ticketRow;
+    try {
+      const existing = await getTicket(db, ctx, ticketId);
+      if (!existing) {
         return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
       }
-
-      return NextResponse.json({ success: true, ticket: updated });
+      await updateTicketStatus(db, ctx, ticketId, status);
+      ticketRow = await getTicket(db, ctx, ticketId);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!ticketRow) {
+      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
     }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "support:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("support_tickets")
-      .update({
-        status,
-        resolved_at: status === "resolved" ? new Date().toISOString() : null,
-      })
-      .eq("id", ticketId)
-      .select("*")
-      .single();
-
-    if (error) throw error;
 
     logInfo({
       event: "admin.support.status_updated",
       route: "/api/admin/support",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { ticketId, status },
     });
 
-    return NextResponse.json({ success: true, ticket: mapSupportTicketRow(data) });
+    return NextResponse.json({ success: true, ticket: mapTicket(ticketRow) });
   } catch (error) {
     logError({ event: "admin.support.status_update_failed", route: "/api/admin/support", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -151,77 +141,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ticketId and message are required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const existing = getMockSupportTickets().find((ticket) => ticket.id === ticketId);
-      if (!existing) {
+    const auth = await adminRoute("support:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
+
+    try {
+      const ticket = await getTicket(db, ctx, ticketId);
+      if (!ticket) {
         return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
       }
 
-      const messages = existing.messages ?? [];
-      const updated = updateMockSupportTicket(ticketId, {
-        status: existing.status === "resolved" ? existing.status : "in_progress",
-        updatedAt: new Date().toISOString(),
-        messages: [
-          ...messages,
-          {
-            id: `msg-${Date.now()}`,
-            sender: "staff",
-            message,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      });
+      await addMessage(db, ctx, ticketId, message);
 
-      return NextResponse.json({ success: true, ticket: updated });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "support:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data: ticketRow, error: ticketError } = await supabase
-      .from("support_tickets")
-      .select("id,status")
-      .eq("id", ticketId)
-      .single();
-
-    if (ticketError || !ticketRow) {
-      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
-    }
-
-    const { error: messageError } = await supabase
-      .from("support_messages")
-      .insert({
-        ticket_id: ticketId,
-        sender: "staff",
-        sender_user_id: session.user.id,
-        message,
-      });
-
-    if (messageError) throw messageError;
-
-    if (ticketRow.status !== "resolved") {
-      await supabase
-        .from("support_tickets")
-        .update({ status: "in_progress" })
-        .eq("id", ticketId);
+      if (ticket.status !== "resolved") {
+        await updateTicketStatus(db, ctx, ticketId, "in_progress");
+      }
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
     }
 
     logInfo({
       event: "admin.support.reply_sent",
       route: "/api/admin/support",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { ticketId },
     });
 

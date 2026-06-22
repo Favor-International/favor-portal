@@ -1,11 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { getMockContent, setMockContent } from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapContentRow } from "@/lib/api/mappers";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { createContent, listAllContent } from "@/lib/db/access/content";
+import { AuthorizationError } from "@/lib/db/access/authz";
+import { logAdminAudit } from "@/lib/admin/audit";
 import { logError, logInfo } from "@/lib/logger";
 import type { ContentItem } from "@/types";
+
+export const runtime = "nodejs";
+
+type ContentRow = {
+  id: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  type: ContentItem["type"];
+  accessLevel: ContentItem["accessLevel"];
+  status: NonNullable<ContentItem["status"]>;
+  author: string;
+  tags: string[];
+  coverImage: string | null;
+  fileUrl: string | null;
+  publishedAt: string | null;
+  updatedAt: string;
+  createdAt: string;
+};
+
+function mapContentRow(row: ContentRow): ContentItem {
+  return {
+    id: row.id,
+    title: row.title,
+    excerpt: row.excerpt,
+    body: row.body,
+    type: row.type,
+    accessLevel: row.accessLevel,
+    date: row.publishedAt ?? row.updatedAt ?? row.createdAt,
+    author: row.author,
+    tags: row.tags ?? [],
+    coverImage: row.coverImage ?? undefined,
+    fileUrl: row.fileUrl ?? undefined,
+    status: row.status,
+  };
+}
 
 const VALID_TYPES: ContentItem["type"][] = ["report", "update", "resource", "prayer", "story"];
 const VALID_ACCESS: ContentItem["accessLevel"][] = [
@@ -65,38 +101,20 @@ function parseContentInput(body: unknown): {
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      const items = getMockContent().map((item) => ({ ...item, status: item.status ?? "published" }));
-      return NextResponse.json({ success: true, items });
-    }
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("portal_content")
-      .select("*")
-      .order("updated_at", { ascending: false });
-
-    if (error) throw error;
+    const rows = await listAllContent(getDb(), ctx);
 
     return NextResponse.json({
       success: true,
-      items: (data ?? []).map(mapContentRow),
+      items: rows.map((row) => mapContentRow(row as ContentRow)),
     });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "admin.content.fetch_failed", route: "/api/admin/content", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -109,70 +127,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid content payload" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const created: ContentItem = {
-        id: `content-${Date.now()}`,
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+
+    const db = getDb();
+
+    let created;
+    try {
+      created = await createContent(db, ctx, {
         title: payload.title,
         excerpt: payload.excerpt,
         body: payload.body,
         type: payload.type,
         accessLevel: payload.accessLevel,
-        date: new Date().toISOString(),
-        author: payload.author,
-        tags: payload.tags,
-        coverImage: payload.coverImage,
-        fileUrl: payload.fileUrl,
-        status: payload.status,
-      };
-      setMockContent([created, ...getMockContent()]);
-      return NextResponse.json({ success: true, item: created }, { status: 201 });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("portal_content")
-      .insert({
-        title: payload.title,
-        excerpt: payload.excerpt,
-        body: payload.body,
-        type: payload.type,
-        access_level: payload.accessLevel,
         status: payload.status,
         author: payload.author,
         tags: payload.tags,
-        cover_image: payload.coverImage ?? null,
-        file_url: payload.fileUrl ?? null,
-        published_at: payload.status === "published" ? new Date().toISOString() : null,
-        created_by: session.user.id,
-        updated_by: session.user.id,
-      })
-      .select("*")
-      .single();
+        coverImage: payload.coverImage ?? null,
+        fileUrl: payload.fileUrl ?? null,
+        publishedAt: payload.status === "published" ? new Date().toISOString() : null,
+      });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
+    }
 
-    if (error) throw error;
+    await logAdminAudit(db, {
+      actorUserId: ctx.userId,
+      action: "admin.content.created",
+      entityType: "portal_content",
+      entityId: created.id,
+      details: { contentId: created.id },
+    });
 
     logInfo({
       event: "admin.content.created",
       route: "/api/admin/content",
-      userId: session.user.id,
-      details: { contentId: data.id },
+      userId: ctx.userId,
+      details: { contentId: created.id },
     });
 
-    return NextResponse.json({ success: true, item: mapContentRow(data) }, { status: 201 });
+    return NextResponse.json({ success: true, item: mapContentRow(created as ContentRow) }, { status: 201 });
   } catch (error) {
     logError({ event: "admin.content.create_failed", route: "/api/admin/content", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -1,69 +1,38 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { getLmsAnalyticsData } from "@/lib/db/access/learning";
+import { AuthorizationError } from "@/lib/db/access/authz";
+
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await adminRoute("analytics:view");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    let data;
+    try {
+      data = await getLmsAnalyticsData(getDb(), ctx);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
+      }
+      throw error;
     }
 
-    const access = await getAdminAccessContext(supabase, session.user.id);
-    if (!requireAdminPermission(access, "analytics:view")) {
-      return NextResponse.json({ error: "Insufficient permission" }, { status: 403 });
-    }
-
-    const [coursesResult, modulesResult, progressResult, attemptsResult, eventsResult, certificatesResult] =
-      await Promise.all([
-        supabase.from("courses").select("id,title"),
-        supabase.from("course_modules").select("id,course_id,title,sort_order,module_type"),
-        supabase.from("user_course_progress").select("user_id,module_id,completed,watch_time_seconds,completed_at,last_watched_at"),
-        supabase.from("user_quiz_attempts").select("module_id,score_percent,passed"),
-        supabase.from("course_module_events").select("module_id,event_type,user_id,watch_time_seconds,created_at"),
-        supabase.from("user_course_certificates").select("course_id,user_id,issued_at"),
-      ]);
-
-    if (
-      coursesResult.error ||
-      modulesResult.error ||
-      progressResult.error ||
-      attemptsResult.error ||
-      eventsResult.error ||
-      certificatesResult.error
-    ) {
-      const errorMessage =
-        coursesResult.error?.message ||
-        modulesResult.error?.message ||
-        progressResult.error?.message ||
-        attemptsResult.error?.message ||
-        eventsResult.error?.message ||
-        certificatesResult.error?.message ||
-        "Analytics query failed";
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
-    }
-
-    const courses = coursesResult.data ?? [];
-    const modules = modulesResult.data ?? [];
-    const progressRows = progressResult.data ?? [];
-    const attempts = attemptsResult.data ?? [];
-    const events = eventsResult.data ?? [];
-    const certificates = certificatesResult.data ?? [];
+    const { courses, modules, progress: progressRows, quizAttempts: attempts, events, certificates } = data;
 
     const cohortMap = new Map<string, { learners: Set<string>; completions: number }>();
     const firstSeenByUser = new Map<string, string>();
     for (const row of progressRows) {
-      const timestamp = row.completed_at ?? row.last_watched_at;
+      const timestamp = row.completedAt ?? row.lastWatchedAt;
       if (!timestamp) continue;
       const cohort = timestamp.slice(0, 7);
-      const current = firstSeenByUser.get(row.user_id);
+      const current = firstSeenByUser.get(row.userId);
       if (!current || timestamp < current) {
-        firstSeenByUser.set(row.user_id, timestamp);
+        firstSeenByUser.set(row.userId, timestamp);
       }
       if (row.completed) {
         const cohortEntry = cohortMap.get(cohort) ?? { learners: new Set<string>(), completions: 0 };
@@ -88,20 +57,20 @@ export async function GET() {
       .sort((a, b) => (a.cohort > b.cohort ? 1 : -1));
 
     const moduleStats = modules.map((module) => {
-      const rows = progressRows.filter((row) => row.module_id === module.id);
-      const started = new Set<string>(rows.map((row) => row.user_id));
+      const rows = progressRows.filter((row) => row.moduleId === module.id);
+      const started = new Set<string>(rows.map((row) => row.userId));
       const completed = rows.filter((row) => row.completed);
       const completionRate = started.size > 0 ? Math.round((completed.length / started.size) * 100) : 0;
       const avgWatchSeconds = rows.length > 0
-        ? Math.round(rows.reduce((sum, row) => sum + row.watch_time_seconds, 0) / rows.length)
+        ? Math.round(rows.reduce((sum, row) => sum + (row.watchTimeSeconds ?? 0), 0) / rows.length)
         : 0;
 
       return {
         moduleId: module.id,
         title: module.title,
-        courseId: module.course_id,
-        moduleType: module.module_type,
-        sortOrder: module.sort_order,
+        courseId: module.courseId,
+        moduleType: module.moduleType,
+        sortOrder: module.sortOrder,
         startedLearners: started.size,
         completedLearners: completed.length,
         completionRate,
@@ -115,16 +84,16 @@ export async function GET() {
       .slice(0, 12);
 
     const quizPerformance = modules
-      .filter((module) => module.module_type === "quiz")
+      .filter((module) => module.moduleType === "quiz")
       .map((module) => {
-        const attemptsForModule = attempts.filter((attempt) => attempt.module_id === module.id);
+        const attemptsForModule = attempts.filter((attempt) => attempt.moduleId === module.id);
         const passedCount = attemptsForModule.filter((attempt) => attempt.passed).length;
         const passRate =
           attemptsForModule.length > 0 ? Math.round((passedCount / attemptsForModule.length) * 100) : 0;
         const avgScore =
           attemptsForModule.length > 0
             ? Math.round(
-                attemptsForModule.reduce((sum, attempt) => sum + attempt.score_percent, 0) /
+                attemptsForModule.reduce((sum, attempt) => sum + attempt.scorePercent, 0) /
                   attemptsForModule.length
               )
             : 0;
@@ -141,12 +110,12 @@ export async function GET() {
 
     const watchBehavior = modules
       .map((module) => {
-        const moduleEvents = events.filter((event) => event.module_id === module.id);
+        const moduleEvents = events.filter((event) => event.moduleId === module.id);
         const totalWatchSeconds = moduleEvents.reduce(
-          (sum, event) => sum + event.watch_time_seconds,
+          (sum, event) => sum + event.watchTimeSeconds,
           0
         );
-        const learners = new Set(moduleEvents.map((event) => event.user_id));
+        const learners = new Set(moduleEvents.map((event) => event.userId));
         const avgWatchSeconds =
           moduleEvents.length > 0 ? Math.round(totalWatchSeconds / moduleEvents.length) : 0;
 

@@ -1,5 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/supabase";
 import {
   AdminPermission,
   AdminRoleKey,
@@ -7,6 +5,7 @@ import {
   normalizeAdminRoles,
   resolveAdminPermissions,
 } from "@/lib/admin/roles";
+import type { AuthContext } from "@/lib/db/auth-context";
 
 export interface AdminAccessContext {
   userId: string;
@@ -15,29 +14,18 @@ export interface AdminAccessContext {
   permissions: AdminPermission[];
 }
 
-export async function getAdminAccessContext(
-  supabase: SupabaseClient<Database>,
-  userId: string
-): Promise<AdminAccessContext> {
-  const [userResult, rolesResult] = await Promise.all([
-    supabase.from("users").select("is_admin").eq("id", userId).maybeSingle(),
-    supabase.from("user_roles").select("role_key").eq("user_id", userId),
-  ]);
-
-  const isAdmin = Boolean(userResult.data?.is_admin);
-  const roles = normalizeAdminRoles((rolesResult.data ?? []).map((row) => row.role_key));
-
+// Derive an admin access context from the request AuthContext (no DB call needed —
+// AuthContext already carries isAdmin + roleKeys).
+export function getAdminAccessContext(ctx: AuthContext): AdminAccessContext {
+  const roles = normalizeAdminRoles(ctx.roleKeys);
   return {
-    userId,
-    isAdmin,
+    userId: ctx.userId,
+    isAdmin: ctx.isAdmin,
     roles,
-    permissions: resolveAdminPermissions(isAdmin, roles),
+    permissions: resolveAdminPermissions(ctx.isAdmin, roles),
   };
 }
 
-export function requireAdminPermission(
-  context: AdminAccessContext,
-  permission: AdminPermission
-): boolean {
+export function requireAdminPermission(context: AdminAccessContext, permission: AdminPermission): boolean {
   return hasAdminPermission(permission, context.permissions);
 }

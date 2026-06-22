@@ -130,3 +130,19 @@ export async function deleteCourse(db: Db, ctx: AuthContext, id: string) {
   if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
   await db.delete(courses).where(eq(courses.id, id));
 }
+
+// Manage-gated raw read of a course together with all of its modules (sorted),
+// bypassing constituent/visibility filtering. Returns null when the course does
+// not exist. Used to build course-version snapshots.
+export async function getCourseWithModules(db: Db, ctx: AuthContext, id: string) {
+  if (!canManage(ctx, ["lms_manager"])) throw new AuthorizationError();
+  const course = await db.select().from(courses).where(eq(courses.id, id)).get();
+  if (!course) return null;
+  const modules = await db
+    .select()
+    .from(courseModules)
+    .where(eq(courseModules.courseId, id))
+    .orderBy(asc(courseModules.sortOrder))
+    .all();
+  return { course, modules };
+}

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { authedRoute } from "@/lib/api/route-auth";
 import { answerFavorQuestion } from "@/lib/openrouter/client";
 import { logError } from "@/lib/logger";
+
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,20 +13,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "question is required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const answer = await answerFavorQuestion(question);
-      return NextResponse.json({ success: true, answer });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
 
     const answer = await answerFavorQuestion(question);
     return NextResponse.json({ success: true, answer });

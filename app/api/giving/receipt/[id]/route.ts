@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { isDevBypass } from '@/lib/dev-mode';
-import { getMockGifts, getMockUserById } from '@/lib/mock-store';
+import { authedRoute } from '@/lib/api/route-auth';
+import { getDb } from '@/lib/db/client';
+import { getOwnedGift, getUserById } from '@/lib/db/access/sky';
 import type { ConstituentType, Gift, User } from '@/types';
 import { logError } from '@/lib/logger';
+
+export const runtime = 'nodejs';
 
 type ReceiptGift = Pick<
   Gift,
@@ -34,8 +36,8 @@ const VALID_CONSTITUENT_TYPES: ConstituentType[] = [
   'volunteer',
 ];
 
-function normalizeConstituentType(value: string): ConstituentType {
-  return VALID_CONSTITUENT_TYPES.includes(value as ConstituentType)
+function normalizeConstituentType(value: string | null): ConstituentType {
+  return value !== null && VALID_CONSTITUENT_TYPES.includes(value as ConstituentType)
     ? (value as ConstituentType)
     : 'individual';
 }
@@ -49,88 +51,78 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') || 'html';
 
-    if (isDevBypass) {
-      const gifts = getMockGifts();
-      const gift = gifts.find((g) => g.id === id);
-      
-      if (!gift) {
-        return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
-      }
+    const auth = await authedRoute();
+    if ('error' in auth) return auth.error;
+    const { ctx } = auth;
 
-      const user = getMockUserById(gift.userId);
-      
-      if (format === 'json') {
-        return NextResponse.json({
-          success: true,
-          gift,
-          donor: user,
-        }, { status: 200 });
-      }
-
-      // Return HTML for PDF generation
-      const html = generateReceiptHTML(gift, user ?? null);
-      return new NextResponse(html, {
-        headers: {
-          'Content-Type': 'text/html',
-          'Content-Disposition': `inline; filename="receipt-${id}.html"`,
-        },
-      });
-    }
-
-    const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const db = getDb();
 
     // Get gift and verify ownership
-    const { data: gift, error: giftError } = await supabase
-      .from('giving_cache')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', session.user.id)
-      .single();
-
-    if (giftError || !gift) {
+    const gift = await getOwnedGift(db, ctx, id);
+    if (!gift) {
       return NextResponse.json({ error: 'Gift not found' }, { status: 404 });
     }
 
     // Get user details
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-
-    if (userError) throw userError;
+    const user = await getUserById(db, ctx.userId);
 
     if (format === 'json') {
       return NextResponse.json({
         success: true,
-        gift,
-        donor: user,
+        gift: {
+          id: gift.id,
+          user_id: gift.userId,
+          gift_date: gift.giftDate,
+          amount: gift.amount,
+          designation: gift.designation,
+          blackbaud_gift_id: gift.blackbaudGiftId,
+          is_recurring: gift.isRecurring,
+          receipt_sent: gift.receiptSent,
+          synced_at: gift.syncedAt,
+          source: gift.source,
+          note: gift.note,
+          created_at: gift.createdAt,
+        },
+        donor: user
+          ? {
+              id: user.id,
+              email: user.email,
+              first_name: user.firstName,
+              last_name: user.lastName,
+              phone: user.phone,
+              blackbaud_constituent_id: user.blackbaudConstituentId,
+              constituent_type: user.constituentType,
+              lifetime_giving_total: user.lifetimeGivingTotal,
+              rdd_assignment: user.rddAssignment,
+              avatar_url: user.avatarUrl,
+              is_admin: user.isAdmin,
+              onboarding_required: user.onboardingRequired,
+              onboarding_completed_at: user.onboardingCompletedAt,
+              created_at: user.createdAt,
+              last_login: user.lastLogin,
+            }
+          : null,
       }, { status: 200 });
     }
 
     const html = generateReceiptHTML(
       {
         id: gift.id,
-        userId: gift.user_id,
+        userId: gift.userId,
         amount: gift.amount,
-        date: gift.gift_date,
+        date: gift.giftDate,
         designation: gift.designation,
-        isRecurring: gift.is_recurring,
-        receiptSent: gift.receipt_sent,
-        blackbaudGiftId: gift.blackbaud_gift_id || undefined,
+        isRecurring: Boolean(gift.isRecurring),
+        receiptSent: Boolean(gift.receiptSent),
+        blackbaudGiftId: gift.blackbaudGiftId || undefined,
       },
       user ? {
         id: user.id,
         email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        constituentType: normalizeConstituentType(user.constituent_type),
-        lifetimeGivingTotal: user.lifetime_giving_total,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        constituentType: normalizeConstituentType(user.constituentType),
+        lifetimeGivingTotal: user.lifetimeGivingTotal ?? 0,
       } : null
     );
 
@@ -154,7 +146,7 @@ function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): str
   });
 
   const donorName = donor ? `${donor.firstName} ${donor.lastName}` : 'Valued Donor';
-  const donorAddress = donor?.address ? 
+  const donorAddress = donor?.address ?
     `${donor.address.street}, ${donor.address.city}, ${donor.address.state} ${donor.address.zip}` :
     'Address on file';
 
@@ -324,22 +316,22 @@ function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): str
       <div class="logo">FAVOR INTERNATIONAL</div>
       <div class="tagline">Transformed Hearts Transform Nations</div>
     </div>
-    
+
     <h1 class="receipt-title">Official Donation Receipt</h1>
     <p class="receipt-number">Receipt #: ${gift.id}</p>
-    
+
     <div class="section">
       <p class="section-title">Donor Information</p>
       <p class="donor-name">${donorName}</p>
       <p class="donor-address">${donorAddress}</p>
       <p class="donor-address">${donor?.email || ''}</p>
     </div>
-    
+
     <div class="amount-box">
       <p class="amount-label">Donation Amount</p>
       <p class="amount-value">$${gift.amount.toLocaleString()}.00</p>
     </div>
-    
+
     <div class="gift-details">
       <div class="detail-item">
         <p class="detail-label">Date of Donation</p>
@@ -358,21 +350,21 @@ function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): str
         <p class="detail-value">Credit Card</p>
       </div>
     </div>
-    
+
     <div class="tax-info">
       <p class="tax-title">Tax-Deductible Contribution</p>
       <p class="tax-text">
-        Favor International, Inc. is a 501(c)(3) nonprofit organization. 
-        No goods or services were provided in exchange for this contribution. 
-        Your donation is tax-deductible to the fullest extent allowed by law. 
+        Favor International, Inc. is a 501(c)(3) nonprofit organization.
+        No goods or services were provided in exchange for this contribution.
+        Your donation is tax-deductible to the fullest extent allowed by law.
         Our EIN is XX-XXXXXXX.
       </p>
       <p class="tax-text" style="margin-top: 15px;">
-        <strong>Please retain this receipt for your tax records.</strong> 
+        <strong>Please retain this receipt for your tax records.</strong>
         Annual tax receipts are mailed by January 31st for the previous calendar year.
       </p>
     </div>
-    
+
     <div class="footer">
       <p><strong>Favor International, Inc.</strong></p>
       <p>3433 Lithia Pinecrest Rd #356, Valrico, FL 33596</p>

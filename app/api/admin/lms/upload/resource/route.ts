@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+// Retained SOLELY for `supabase.storage` (see TODO(Plan 5) below). All auth and
+// DB writes have moved off Supabase.
 import { createClient } from "@/lib/supabase/server";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
 import { logAdminAudit } from "@/lib/admin/audit";
+
+export const runtime = "nodejs";
 
 const DEFAULT_BUCKET = process.env.SUPABASE_LMS_ASSETS_BUCKET || "lms-assets";
 
@@ -15,20 +20,10 @@ function sanitizeFilename(name: string) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const access = await getAdminAccessContext(supabase, session.user.id);
-    if (!requireAdminPermission(access, "lms:manage")) {
-      return NextResponse.json({ error: "LMS manager permission required" }, { status: 403 });
-    }
+    const auth = await adminRoute("lms:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -38,8 +33,10 @@ export async function POST(request: Request) {
     }
 
     const safeName = sanitizeFilename(file.name || "resource");
-    const filePath = `${session.user.id}/${Date.now()}-${safeName}`;
+    const filePath = `${ctx.userId}/${Date.now()}-${safeName}`;
 
+    // TODO(Plan 5): replace Supabase Storage with R2
+    const supabase = await createClient();
     const { data: uploaded, error: uploadError } = await supabase.storage
       .from(DEFAULT_BUCKET)
       .upload(filePath, file, {
@@ -50,8 +47,8 @@ export async function POST(request: Request) {
 
     if (uploadError || !uploaded?.path) {
       const fallbackDataUrl = await fileToDataUrl(file);
-      await logAdminAudit(supabase, {
-        actorUserId: session.user.id,
+      await logAdminAudit(db, {
+        actorUserId: ctx.userId,
         action: "lms.upload.resource.fallback",
         entityType: "course_module_asset",
         details: {
@@ -76,8 +73,8 @@ export async function POST(request: Request) {
 
     const { data: publicUrlData } = supabase.storage.from(DEFAULT_BUCKET).getPublicUrl(uploaded.path);
 
-    await logAdminAudit(supabase, {
-      actorUserId: session.user.id,
+    await logAdminAudit(db, {
+      actorUserId: ctx.userId,
       action: "lms.upload.resource.storage",
       entityType: "course_module_asset",
       entityId: uploaded.path,

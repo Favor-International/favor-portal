@@ -53,6 +53,13 @@ export async function getContent(db: Db, ctx: AuthContext, id: string) {
   return isContentVisible(ctx, row) ? row : null;
 }
 
+// Admin listing: returns every content row (including drafts) ordered by most
+// recently updated. Restricted to content managers / lms managers / admins.
+export async function listAllContent(db: Db, ctx: AuthContext) {
+  if (!canManage(ctx, CONTENT_ROLES)) throw new AuthorizationError();
+  return db.select().from(portalContent).orderBy(desc(portalContent.updatedAt)).all();
+}
+
 // Manage operations (content_manager / lms_manager / admin).
 export async function createContent(db: Db, ctx: AuthContext, input: NewContent) {
   if (!canManage(ctx, CONTENT_ROLES)) throw new AuthorizationError();
@@ -149,4 +156,13 @@ export async function upsertDashboardOverride(db: Db, ctx: AuthContext, input: D
     .from(portalDashboardOverrides)
     .where(eq(portalDashboardOverrides.roleKey, input.roleKey))
     .get();
+}
+
+export async function deleteDashboardOverride(
+  db: Db,
+  ctx: AuthContext,
+  roleKey: DashboardOverrideInput["roleKey"]
+) {
+  if (!canManage(ctx, ["content_manager"])) throw new AuthorizationError();
+  await db.delete(portalDashboardOverrides).where(eq(portalDashboardOverrides.roleKey, roleKey));
 }

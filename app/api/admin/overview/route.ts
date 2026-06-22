@@ -1,78 +1,89 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import {
-  getMockActivity,
-  getMockContent,
-  getMockCourses,
-  getMockGifts,
-  getMockSupportTickets,
-  getMockUsers,
-} from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapActivityRow, mapGiftRow, mapSupportTicketRow, mapUserRow } from "@/lib/api/mappers";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { getOverviewStats } from "@/lib/db/access/admin";
 import { logError } from "@/lib/logger";
+import type { ActivityEvent, Gift, SupportTicket, User } from "@/types";
+
+export const runtime = "nodejs";
+
+type Overview = Awaited<ReturnType<typeof getOverviewStats>>;
+
+function mapUser(row: Overview["users"][number]): User {
+  return {
+    id: row.id,
+    email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    phone: row.phone ?? undefined,
+    blackbaudConstituentId: row.blackbaudConstituentId ?? undefined,
+    constituentType: row.constituentType as User["constituentType"],
+    lifetimeGivingTotal: Number(row.lifetimeGivingTotal ?? 0),
+    rddAssignment: row.rddAssignment ?? undefined,
+    avatarUrl: row.avatarUrl ?? undefined,
+    isAdmin: Boolean(row.isAdmin),
+    createdAt: row.createdAt ?? "",
+    lastLogin: row.lastLogin ?? undefined,
+  };
+}
+
+function mapGift(row: Overview["gifts"][number]): Gift {
+  return {
+    id: row.id,
+    userId: row.userId,
+    amount: Number(row.amount),
+    date: row.giftDate,
+    designation: row.designation,
+    blackbaudGiftId: row.blackbaudGiftId ?? undefined,
+    isRecurring: Boolean(row.isRecurring),
+    receiptSent: Boolean(row.receiptSent),
+    source: (row.source ?? "imported") as Gift["source"],
+  };
+}
+
+function mapActivity(row: Overview["activity"][number]): ActivityEvent {
+  return {
+    id: row.id,
+    type: row.type as ActivityEvent["type"],
+    userId: row.userId ?? "",
+    metadata: (row.metadata as ActivityEvent["metadata"]) ?? {},
+    createdAt: row.createdAt,
+  };
+}
+
+function mapSupportTicket(row: Overview["tickets"][number]): SupportTicket {
+  return {
+    id: row.id,
+    requesterUserId: row.requesterUserId ?? undefined,
+    category: row.category,
+    subject: row.subject,
+    message: row.message,
+    status: row.status as SupportTicket["status"],
+    priority: row.priority as SupportTicket["priority"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    resolvedAt: row.resolvedAt ?? undefined,
+    requesterName: row.requesterName ?? undefined,
+    requesterEmail: row.requesterEmail ?? undefined,
+  };
+}
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        users: getMockUsers(),
-        gifts: getMockGifts(),
-        activity: getMockActivity(),
-        tickets: getMockSupportTickets(),
-        coursesCount: getMockCourses().length,
-        contentCount: getMockContent().length,
-      });
-    }
+    const auth = await adminRoute("admin:access");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canAccess = await hasAdminPermission(supabase, session.user.id, "admin:access");
-    if (!canAccess) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const [
-      usersResult,
-      giftsResult,
-      activityResult,
-      ticketsResult,
-      coursesCountResult,
-      contentCountResult,
-    ] = await Promise.all([
-      supabase.from("users").select("*").order("created_at", { ascending: false }),
-      supabase.from("giving_cache").select("*").order("gift_date", { ascending: false }),
-      supabase.from("portal_activity_events").select("*").order("created_at", { ascending: false }).limit(200),
-      supabase.from("support_tickets").select("*").order("created_at", { ascending: false }).limit(200),
-      supabase.from("courses").select("id", { count: "exact", head: true }),
-      supabase.from("portal_content").select("id", { count: "exact", head: true }),
-    ]);
-
-    if (usersResult.error) throw usersResult.error;
-    if (giftsResult.error) throw giftsResult.error;
-    if (activityResult.error) throw activityResult.error;
-    if (ticketsResult.error) throw ticketsResult.error;
-    if (coursesCountResult.error) throw coursesCountResult.error;
-    if (contentCountResult.error) throw contentCountResult.error;
+    const overview = await getOverviewStats(getDb(), ctx);
 
     return NextResponse.json({
       success: true,
-      users: (usersResult.data ?? []).map(mapUserRow),
-      gifts: (giftsResult.data ?? []).map(mapGiftRow),
-      activity: (activityResult.data ?? []).map(mapActivityRow).filter((event) => Boolean(event.userId)),
-      tickets: (ticketsResult.data ?? []).map(mapSupportTicketRow),
-      coursesCount: coursesCountResult.count ?? 0,
-      contentCount: contentCountResult.count ?? 0,
+      users: overview.users.map(mapUser),
+      gifts: overview.gifts.map(mapGift),
+      activity: overview.activity.map(mapActivity).filter((event) => Boolean(event.userId)),
+      tickets: overview.tickets.map(mapSupportTicket),
+      coursesCount: overview.coursesCount,
+      contentCount: overview.contentCount,
     });
   } catch (error) {
     logError({ event: "admin.overview.fetch_failed", route: "/api/admin/overview", error });

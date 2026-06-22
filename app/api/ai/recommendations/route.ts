@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { authedRoute } from "@/lib/api/route-auth";
 import { getCourseRecommendations } from "@/lib/openrouter/client";
 import { logError } from "@/lib/logger";
+
+export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,24 +16,8 @@ export async function POST(request: NextRequest) {
       : [];
     const userType = typeof body?.userType === "string" ? body.userType : "individual";
 
-    if (isDevBypass) {
-      const recommendations = await getCourseRecommendations(
-        userInterests,
-        completedCourses,
-        userType
-      );
-      return NextResponse.json({ success: true, recommendations });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
 
     const recommendations = await getCourseRecommendations(
       userInterests,

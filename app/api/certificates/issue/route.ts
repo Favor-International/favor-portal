@@ -1,7 +1,21 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { and, eq, inArray } from "drizzle-orm";
+// TODO(Plan 5): replace Supabase Storage with R2
 import { createClient } from "@/lib/supabase/server";
+import { authedRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { issueCertificate } from "@/lib/db/access/learning";
+import {
+  courses,
+  courseModules,
+  userCourseProgress,
+  userCourseCertificates,
+  users,
+} from "@/lib/db/schema";
+
+export const runtime = "nodejs";
 
 const CERTIFICATES_BUCKET = process.env.SUPABASE_CERTIFICATES_BUCKET || "lms-certificates";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
@@ -132,58 +146,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing courseId" }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+    const auth = await authedRoute();
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userId = ctx.userId;
+    const db = getDb();
 
-    const userId = session.user.id;
+    const [courseRow, userRow] = await Promise.all([
+      db.select({ id: courses.id, title: courses.title }).from(courses).where(eq(courses.id, courseId)).get(),
+      db
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .get(),
+    ]);
 
-    const [{ data: courseRow, error: courseError }, { data: userRow, error: userError }] =
-      await Promise.all([
-        supabase.from("courses").select("id,title").eq("id", courseId).single(),
-        supabase.from("users").select("first_name,last_name").eq("id", userId).single(),
-      ]);
-
-    if (courseError || !courseRow) {
+    if (!courseRow) {
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
 
-    if (userError || !userRow) {
+    if (!userRow) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { data: moduleRows, error: moduleError } = await supabase
-      .from("course_modules")
-      .select("id")
-      .eq("course_id", courseId);
-
-    if (moduleError || !moduleRows) {
-      return NextResponse.json({ error: "Unable to validate course modules" }, { status: 500 });
-    }
+    const moduleRows = await db
+      .select({ id: courseModules.id })
+      .from(courseModules)
+      .where(eq(courseModules.courseId, courseId))
+      .all();
 
     const moduleIds = moduleRows.map((module) => module.id);
     if (moduleIds.length === 0) {
       return NextResponse.json({ error: "Course has no modules" }, { status: 400 });
     }
 
-    const { data: completedRows, error: completionError } = await supabase
-      .from("user_course_progress")
-      .select("module_id,completed")
-      .eq("user_id", userId)
-      .in("module_id", moduleIds)
-      .eq("completed", true);
+    const completedRows = await db
+      .select({ moduleId: userCourseProgress.moduleId })
+      .from(userCourseProgress)
+      .where(
+        and(
+          eq(userCourseProgress.userId, userId),
+          inArray(userCourseProgress.moduleId, moduleIds),
+          eq(userCourseProgress.completed, true)
+        )
+      )
+      .all();
 
-    if (completionError) {
-      return NextResponse.json({ error: "Unable to validate completion" }, { status: 500 });
-    }
-
-    const completedModuleIds = new Set((completedRows ?? []).map((entry) => entry.module_id));
+    const completedModuleIds = new Set(completedRows.map((entry) => entry.moduleId));
     const isComplete = moduleIds.every((moduleId) => completedModuleIds.has(moduleId));
 
     if (!isComplete) {
@@ -193,22 +203,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: existingCertificate } = await supabase
-      .from("user_course_certificates")
-      .select("issued_at,certificate_url,verification_token,certificate_number")
-      .eq("user_id", userId)
-      .eq("course_id", courseId)
-      .maybeSingle();
+    const existingCertificate = await db
+      .select({
+        issuedAt: userCourseCertificates.issuedAt,
+        certificateUrl: userCourseCertificates.certificateUrl,
+        verificationToken: userCourseCertificates.verificationToken,
+        certificateNumber: userCourseCertificates.certificateNumber,
+      })
+      .from(userCourseCertificates)
+      .where(
+        and(eq(userCourseCertificates.userId, userId), eq(userCourseCertificates.courseId, courseId))
+      )
+      .get();
 
-    if (existingCertificate?.verification_token && existingCertificate.certificate_url) {
-      const verificationUrl = buildVerificationUrl(existingCertificate.verification_token);
+    if (existingCertificate?.verificationToken && existingCertificate.certificateUrl) {
+      const verificationUrl = buildVerificationUrl(existingCertificate.verificationToken);
       return NextResponse.json(
         {
           success: true,
-          issuedAt: existingCertificate.issued_at,
-          certificateUrl: existingCertificate.certificate_url,
+          issuedAt: existingCertificate.issuedAt,
+          certificateUrl: existingCertificate.certificateUrl,
           verificationUrl,
-          certificateNumber: existingCertificate.certificate_number,
+          certificateNumber: existingCertificate.certificateNumber,
         },
         { status: 200 }
       );
@@ -217,8 +233,8 @@ export async function POST(request: Request) {
     const issuedAt = new Date().toISOString();
     const verificationToken = crypto.randomBytes(20).toString("hex");
     const verificationUrl = buildVerificationUrl(verificationToken);
-    const certificateNumber = existingCertificate?.certificate_number || buildCertificateNumber();
-    const recipientName = `${userRow.first_name} ${userRow.last_name}`.trim();
+    const certificateNumber = existingCertificate?.certificateNumber || buildCertificateNumber();
+    const recipientName = `${userRow.firstName} ${userRow.lastName}`.trim();
     const pdfBytes = await generateCertificatePdf({
       recipientName,
       courseTitle: courseRow.title,
@@ -227,6 +243,8 @@ export async function POST(request: Request) {
       verificationUrl,
     });
 
+    // TODO(Plan 5): replace Supabase Storage with R2
+    const supabase = await createClient();
     const filePath = `${userId}/${courseId}/${verificationToken}.pdf`;
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(CERTIFICATES_BUCKET)
@@ -246,29 +264,13 @@ export async function POST(request: Request) {
       certificateUrl = publicUrlData.publicUrl;
     }
 
-    const { error: upsertError } = await supabase.from("user_course_certificates").upsert(
-      {
-        user_id: userId,
-        course_id: courseId,
-        completion_rate: 100,
-        issued_at: issuedAt,
-        certificate_url: certificateUrl,
-        verification_token: verificationToken,
-        certificate_number: certificateNumber,
-        metadata: {
-          recipientName,
-          courseTitle: courseRow.title,
-          verificationUrl,
-          issuedAt,
-          moduleCount: moduleIds.length,
-        },
-      },
-      { onConflict: "user_id,course_id" }
-    );
-
-    if (upsertError) {
-      return NextResponse.json({ error: upsertError.message }, { status: 500 });
-    }
+    await issueCertificate(db, ctx, {
+      courseId,
+      completionRate: 100,
+      certificateUrl,
+      verificationToken,
+      certificateNumber,
+    });
 
     return NextResponse.json(
       {

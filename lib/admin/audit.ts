@@ -1,27 +1,25 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Json } from "@/types/supabase";
+import type { Db } from "../db/client";
+import { adminAuditLogs } from "../db/schema";
 
 interface AuditInput {
   actorUserId: string;
   action: string;
   entityType: string;
   entityId?: string;
-  details?: Json;
+  details?: Record<string, unknown>;
 }
 
-export async function logAdminAudit(
-  supabase: SupabaseClient<Database>,
-  input: AuditInput
-): Promise<void> {
-  const { error } = await supabase.from("admin_audit_logs").insert({
-    actor_user_id: input.actorUserId,
-    action: input.action,
-    entity_type: input.entityType,
-    entity_id: input.entityId ?? null,
-    details: input.details ?? {},
-  });
-
-  if (error) {
-    console.error("Failed to write admin audit log:", error.message);
+// Best-effort admin audit log (never throws — failures are logged, not propagated).
+export async function logAdminAudit(db: Db, input: AuditInput): Promise<void> {
+  try {
+    await db.insert(adminAuditLogs).values({
+      actorUserId: input.actorUserId,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId ?? null,
+      details: input.details ?? {},
+    });
+  } catch (error) {
+    console.error("Failed to write admin audit log:", error);
   }
 }

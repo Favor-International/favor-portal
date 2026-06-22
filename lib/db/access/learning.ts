@@ -2,13 +2,112 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../client";
 import type { AuthContext } from "../auth-context";
 import {
+  courses,
+  courseModules,
   userCourseProgress,
   userCourseNotes,
   userQuizAttempts,
   courseModuleEvents,
   userCourseCertificates,
 } from "../schema";
-import { canManage } from "./authz";
+import { AuthorizationError, canManage } from "./authz";
+
+// Roles permitted to read aggregate, cross-user LMS analytics.
+const ANALYTICS_ROLES = ["lms_manager", "analyst"];
+
+// Raw, cross-user rows backing the admin LMS analytics dashboard. Manager/analyst
+// (or admin) only — callers aggregate these into the route's response shape.
+export type LmsAnalyticsData = {
+  courses: { id: string; title: string }[];
+  modules: {
+    id: string;
+    courseId: string;
+    title: string;
+    sortOrder: number | null;
+    moduleType: string;
+  }[];
+  progress: {
+    userId: string;
+    moduleId: string;
+    completed: boolean | null;
+    watchTimeSeconds: number | null;
+    completedAt: string | null;
+    lastWatchedAt: string | null;
+  }[];
+  quizAttempts: { moduleId: string; scorePercent: number; passed: boolean }[];
+  events: {
+    moduleId: string;
+    eventType: string;
+    userId: string;
+    watchTimeSeconds: number;
+    createdAt: string | null;
+  }[];
+  certificates: { courseId: string; userId: string; issuedAt: string | null }[];
+};
+
+export async function getLmsAnalyticsData(db: Db, ctx: AuthContext): Promise<LmsAnalyticsData> {
+  if (!(ctx.isAdmin || canManage(ctx, ANALYTICS_ROLES))) throw new AuthorizationError();
+
+  const [courseRows, moduleRows, progressRows, attemptRows, eventRows, certificateRows] = await Promise.all([
+    db.select({ id: courses.id, title: courses.title }).from(courses).all(),
+    db
+      .select({
+        id: courseModules.id,
+        courseId: courseModules.courseId,
+        title: courseModules.title,
+        sortOrder: courseModules.sortOrder,
+        moduleType: courseModules.moduleType,
+      })
+      .from(courseModules)
+      .all(),
+    db
+      .select({
+        userId: userCourseProgress.userId,
+        moduleId: userCourseProgress.moduleId,
+        completed: userCourseProgress.completed,
+        watchTimeSeconds: userCourseProgress.watchTimeSeconds,
+        completedAt: userCourseProgress.completedAt,
+        lastWatchedAt: userCourseProgress.lastWatchedAt,
+      })
+      .from(userCourseProgress)
+      .all(),
+    db
+      .select({
+        moduleId: userQuizAttempts.moduleId,
+        scorePercent: userQuizAttempts.scorePercent,
+        passed: userQuizAttempts.passed,
+      })
+      .from(userQuizAttempts)
+      .all(),
+    db
+      .select({
+        moduleId: courseModuleEvents.moduleId,
+        eventType: courseModuleEvents.eventType,
+        userId: courseModuleEvents.userId,
+        watchTimeSeconds: courseModuleEvents.watchTimeSeconds,
+        createdAt: courseModuleEvents.createdAt,
+      })
+      .from(courseModuleEvents)
+      .all(),
+    db
+      .select({
+        courseId: userCourseCertificates.courseId,
+        userId: userCourseCertificates.userId,
+        issuedAt: userCourseCertificates.issuedAt,
+      })
+      .from(userCourseCertificates)
+      .all(),
+  ]);
+
+  return {
+    courses: courseRows,
+    modules: moduleRows,
+    progress: progressRows,
+    quizAttempts: attemptRows,
+    events: eventRows,
+    certificates: certificateRows,
+  };
+}
 
 export type ProgressInput = {
   moduleId: string;

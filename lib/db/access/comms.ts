@@ -37,6 +37,16 @@ export async function listTemplates(db: Db, ctx: AuthContext) {
     .all();
 }
 
+export async function getTemplate(db: Db, ctx: AuthContext, id: string) {
+  if (!canManage(ctx, COMMS_MANAGER_ROLES)) throw new AuthorizationError();
+  const row = await db
+    .select()
+    .from(communicationTemplates)
+    .where(eq(communicationTemplates.id, id))
+    .get();
+  return row ?? null;
+}
+
 export async function createTemplate(db: Db, ctx: AuthContext, input: NewTemplate) {
   if (!canManage(ctx, COMMS_MANAGER_ROLES)) throw new AuthorizationError();
   const now = new Date().toISOString();
@@ -71,6 +81,12 @@ export async function updateTemplate(db: Db, ctx: AuthContext, id: string, input
       updatedAt: now,
     })
     .where(eq(communicationTemplates.id, id));
+  const row = await db
+    .select()
+    .from(communicationTemplates)
+    .where(eq(communicationTemplates.id, id))
+    .get();
+  return row ?? null;
 }
 
 export async function deleteTemplate(db: Db, ctx: AuthContext, id: string) {
@@ -95,11 +111,14 @@ export async function recordSendLog(db: Db, ctx: AuthContext, input: NewSendLog)
   return row;
 }
 
-export async function listSendLogs(db: Db, ctx: AuthContext) {
+export async function listSendLogs(db: Db, ctx: AuthContext, limit?: number) {
   if (!canManage(ctx, COMMS_VIEWER_ROLES)) throw new AuthorizationError();
-  return db
+  const query = db
     .select()
     .from(communicationSendLogs)
-    .orderBy(desc(communicationSendLogs.sentAt))
-    .all();
+    .orderBy(desc(communicationSendLogs.sentAt));
+  if (typeof limit === "number") {
+    return query.limit(limit).all();
+  }
+  return query.all();
 }

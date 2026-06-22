@@ -1,53 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { getUserById } from "@/lib/db/access/sky";
 import { blackbaudClient } from "@/lib/blackbaud/client";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
 import { logError } from "@/lib/logger";
-import { getMockGiftsByConstituentId } from "@/lib/blackbaud/mock-data";
+
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
-    if (isDevBypass) {
-      const constituentId = request.nextUrl.searchParams.get("constituentId") ?? "BB-001-IND";
-      return NextResponse.json({
-        success: true,
-        gifts: getMockGiftsByConstituentId(constituentId),
-      });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await adminRoute("admin:access");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
     const requestedConstituentId = request.nextUrl.searchParams.get("constituentId");
 
-    const { data: userRow, error: userError } = await supabase
-      .from("users")
-      .select("blackbaud_constituent_id")
-      .eq("id", session.user.id)
-      .single();
-
-    if (userError || !userRow) {
+    const userRow = await getUserById(getDb(), ctx.userId);
+    if (!userRow) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const constituentId = requestedConstituentId || userRow.blackbaud_constituent_id;
+    const constituentId = requestedConstituentId || userRow.blackbaudConstituentId;
     if (!constituentId) {
       return NextResponse.json({ success: true, gifts: [] });
-    }
-
-    if (requestedConstituentId && requestedConstituentId !== userRow.blackbaud_constituent_id) {
-      const canManageUsers = await hasAdminPermission(supabase, session.user.id, "users:manage");
-      if (!canManageUsers) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
     }
 
     const gifts = await blackbaudClient.getGiftsByConstituentId(constituentId);

@@ -1,22 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
 import {
-  addMockCommunicationSendLog,
-  getMockCommunicationSendLogs,
-  getMockTemplates,
-  setMockTemplates,
-} from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapTemplateRow } from "@/lib/api/mappers";
+  listTemplates,
+  createTemplate,
+  getTemplate,
+  recordSendLog,
+  listSendLogs,
+} from "@/lib/db/access/comms";
+import { AuthorizationError } from "@/lib/db/access/authz";
+import { getProfile } from "@/lib/db/access/profile";
+import { logAdminAudit } from "@/lib/admin/audit";
 import { logError, logInfo } from "@/lib/logger";
 import { sendEmail } from "@/lib/resend/client";
 import { sendSMS } from "@/lib/twilio/client";
 import type { CommunicationTemplate } from "@/types";
-import type { Json } from "@/types/supabase";
+
+export const runtime = "nodejs";
 
 const VALID_CHANNELS: CommunicationTemplate["channel"][] = ["email", "sms", "direct_mail"];
 const VALID_STATUS: CommunicationTemplate["status"][] = ["active", "draft"];
+
+type TemplateRow = {
+  id: string;
+  channel: string;
+  name: string;
+  subject: string | null;
+  content: string;
+  status: string;
+  updatedAt: string;
+};
+
+function mapTemplate(row: TemplateRow): CommunicationTemplate {
+  return {
+    id: row.id,
+    channel: row.channel as CommunicationTemplate["channel"],
+    name: row.name,
+    subject: row.subject ?? undefined,
+    content: row.content,
+    status: row.status as CommunicationTemplate["status"],
+    updatedAt: row.updatedAt,
+  };
+}
 
 function renderTemplate(content: string, variables: Record<string, string>): string {
   return Object.entries(variables).reduce((result, [key, value]) => {
@@ -26,51 +51,33 @@ function renderTemplate(content: string, variables: Record<string, string>): str
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        templates: getMockTemplates(),
-        sendLog: getMockCommunicationSendLogs(),
-      });
-    }
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const [{ data: templateRows, error: templateError }, { data: logRows, error: logRowsError }] = await Promise.all([
-      supabase.from("communication_templates").select("*").order("updated_at", { ascending: false }),
-      supabase.from("communication_send_logs").select("*").order("sent_at", { ascending: false }).limit(100),
+    const db = getDb();
+    const [templateRows, logRows] = await Promise.all([
+      listTemplates(db, ctx),
+      listSendLogs(db, ctx, 100),
     ]);
 
-    if (templateError) throw templateError;
-    if (logRowsError) throw logRowsError;
-
-    const sendLog = (logRows ?? []).map((row) => ({
+    const sendLog = logRows.map((row) => ({
       id: row.id,
-      templateId: row.template_id ?? "",
-      templateName: row.template_name,
+      templateId: row.templateId ?? "",
+      templateName: row.templateName,
       channel: row.channel as CommunicationTemplate["channel"],
-      sentAt: row.sent_at,
+      sentAt: row.sentAt,
     }));
 
     return NextResponse.json({
       success: true,
-      templates: (templateRows ?? []).map(mapTemplateRow),
+      templates: templateRows.map(mapTemplate),
       sendLog,
     });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "admin.communications.fetch_failed", route: "/api/admin/communications", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -90,61 +97,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid template payload" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const created: CommunicationTemplate = {
-        id: `template-${Date.now()}`,
-        channel,
-        name,
-        subject,
-        content,
-        status,
-        updatedAt: new Date().toISOString(),
-      };
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
-      setMockTemplates([created, ...getMockTemplates()]);
-      return NextResponse.json({ success: true, template: created }, { status: 201 });
-    }
+    const created = await createTemplate(db, ctx, {
+      channel,
+      name,
+      subject: subject ?? null,
+      content,
+      status,
+    });
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("communication_templates")
-      .insert({
-        channel,
-        name,
-        subject: subject ?? null,
-        content,
-        status,
-        created_by: session.user.id,
-        updated_by: session.user.id,
-      })
-      .select("*")
-      .single();
-
-    if (error) throw error;
+    await logAdminAudit(db, {
+      actorUserId: ctx.userId,
+      action: "admin.communications.template_created",
+      entityType: "communication_template",
+      entityId: created.id,
+      details: { templateId: created.id },
+    });
 
     logInfo({
       event: "admin.communications.template_created",
       route: "/api/admin/communications",
-      userId: session.user.id,
-      details: { templateId: data.id },
+      userId: ctx.userId,
+      details: { templateId: created.id },
     });
 
-    return NextResponse.json({ success: true, template: mapTemplateRow(data) }, { status: 201 });
+    return NextResponse.json({ success: true, template: mapTemplate(created) }, { status: 201 });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "admin.communications.template_create_failed", route: "/api/admin/communications", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -159,66 +144,31 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "templateId is required" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const template = getMockTemplates().find((item) => item.id === templateId);
-      if (!template) {
-        return NextResponse.json({ error: "Template not found" }, { status: 404 });
-      }
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+    const db = getDb();
 
-      addMockCommunicationSendLog({
-        id: `send-${crypto.randomUUID()}`,
-        templateId: template.id,
-        templateName: template.name,
-        channel: template.channel,
-        sentAt: new Date().toISOString(),
-      });
-
-      return NextResponse.json({ success: true });
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const [{ data: templateRow, error: templateError }, { data: senderRow, error: senderError }] = await Promise.all([
-      supabase
-        .from("communication_templates")
-        .select("id,name,channel,subject,content")
-        .eq("id", templateId)
-        .single(),
-      supabase
-        .from("users")
-        .select("first_name,last_name,email,phone,constituent_type")
-        .eq("id", session.user.id)
-        .single(),
+    const [templateRow, senderRow] = await Promise.all([
+      getTemplate(db, ctx, templateId),
+      getProfile(db, ctx),
     ]);
 
-    if (templateError || !templateRow) {
+    if (!templateRow) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
-    if (senderError || !senderRow) {
+    if (!senderRow) {
       return NextResponse.json({ error: "Sender profile not found" }, { status: 404 });
     }
 
     const variables = {
-      firstName: senderRow.first_name,
-      lastName: senderRow.last_name,
+      firstName: senderRow.firstName,
+      lastName: senderRow.lastName,
       email: senderRow.email,
       amount: "$100.00",
       date: new Date().toLocaleDateString(),
       designation: "Where Most Needed",
-      constituentType: senderRow.constituent_type,
+      constituentType: senderRow.constituentType ?? "",
     };
 
     const content = renderTemplate(templateRow.content, variables);
@@ -244,7 +194,7 @@ export async function PUT(request: NextRequest) {
           subject,
           text: content,
         });
-        metadata = { ...metadata, provider: "resend", providerMessageId: result.id };
+        metadata = { ...metadata, provider: "resend", providerMessageId: result.id ?? null };
       } else if (templateRow.channel === "sms") {
         recipient = recipient || senderRow.phone || null;
         if (!recipient) {
@@ -264,17 +214,15 @@ export async function PUT(request: NextRequest) {
       };
     }
 
-    const { error } = await supabase.from("communication_send_logs").insert({
-      template_id: templateRow.id,
-      template_name: templateRow.name,
+    await recordSendLog(db, ctx, {
+      templateId: templateRow.id,
+      templateName: templateRow.name,
       channel: templateRow.channel,
       recipient,
-      sent_by: session.user.id,
       status,
-      metadata: metadata as Json,
+      metadata,
     });
 
-    if (error) throw error;
     if (status === "failed") {
       return NextResponse.json(
         { error: "Dispatch failed. Check communication send logs for details." },
@@ -285,12 +233,15 @@ export async function PUT(request: NextRequest) {
     logInfo({
       event: "admin.communications.test_send",
       route: "/api/admin/communications",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { templateId, status, channel: templateRow.channel },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({ event: "admin.communications.test_send_failed", route: "/api/admin/communications", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

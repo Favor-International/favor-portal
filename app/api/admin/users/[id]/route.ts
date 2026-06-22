@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { updateMockUser } from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapUserRow } from "@/lib/api/mappers";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { updateUser } from "@/lib/db/access/admin";
+import { logAdminAudit } from "@/lib/admin/audit";
 import { logError, logInfo } from "@/lib/logger";
 import type { User } from "@/types";
+
+export const runtime = "nodejs";
 
 const VALID_TYPES: User["constituentType"][] = [
   "individual",
@@ -16,6 +17,26 @@ const VALID_TYPES: User["constituentType"][] = [
   "ambassador",
   "volunteer",
 ];
+
+type UpdatedRow = NonNullable<Awaited<ReturnType<typeof updateUser>>>;
+
+function mapUser(row: UpdatedRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    phone: row.phone ?? undefined,
+    blackbaudConstituentId: row.blackbaudConstituentId ?? undefined,
+    constituentType: row.constituentType as User["constituentType"],
+    lifetimeGivingTotal: Number(row.lifetimeGivingTotal ?? 0),
+    rddAssignment: row.rddAssignment ?? undefined,
+    avatarUrl: row.avatarUrl ?? undefined,
+    isAdmin: Boolean(row.isAdmin),
+    createdAt: row.createdAt ?? "",
+    lastLogin: row.lastLogin ?? undefined,
+  };
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -39,60 +60,39 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid constituent type" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const updated = updateMockUser(id, {
-        firstName,
-        lastName,
-        email,
-        constituentType,
-        isAdmin,
-      });
+    const auth = await adminRoute("users:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-      if (!updated) {
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
-      }
+    const db = getDb();
+    const updated = await updateUser(db, ctx, id, {
+      firstName,
+      lastName,
+      email,
+      constituentType: constituentType as NonNullable<User["constituentType"]>,
+      isAdmin,
+    });
 
-      return NextResponse.json({ success: true, user: updated });
+    if (!updated) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManageUsers = await hasAdminPermission(supabase, session.user.id, "users:manage");
-    if (!canManageUsers) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("users")
-      .update({
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        constituent_type: constituentType,
-        is_admin: isAdmin,
-      })
-      .eq("id", id)
-      .select("*")
-      .single();
-
-    if (error) throw error;
+    await logAdminAudit(db, {
+      actorUserId: ctx.userId,
+      action: "users.updated",
+      entityType: "user",
+      entityId: id,
+      details: { firstName, lastName, email, constituentType, isAdmin },
+    });
 
     logInfo({
       event: "admin.users.updated",
       route: "/api/admin/users/[id]",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { targetUserId: id },
     });
 
-    return NextResponse.json({ success: true, user: mapUserRow(data) });
+    return NextResponse.json({ success: true, user: mapUser(updated) });
   } catch (error) {
     logError({ event: "admin.users.update_failed", route: "/api/admin/users/[id]", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

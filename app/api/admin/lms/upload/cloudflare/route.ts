@@ -1,28 +1,19 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
 import { getStreamUrl, getThumbnailUrl } from "@/lib/cloudflare/client";
-import { getAdminAccessContext, requireAdminPermission } from "@/lib/admin/permissions";
 import { logAdminAudit } from "@/lib/admin/audit";
+
+export const runtime = "nodejs";
 
 const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const access = await getAdminAccessContext(supabase, session.user.id);
-    if (!requireAdminPermission(access, "lms:manage")) {
-      return NextResponse.json({ error: "LMS manager permission required" }, { status: 403 });
-    }
+    const auth = await adminRoute("lms:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
     if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
       return NextResponse.json(
@@ -66,8 +57,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing Stream asset id" }, { status: 502 });
     }
 
-    await logAdminAudit(supabase, {
-      actorUserId: session.user.id,
+    await logAdminAudit(getDb(), {
+      actorUserId: ctx.userId,
       action: "lms.upload.video.cloudflare",
       entityType: "course_module_asset",
       entityId: uid,

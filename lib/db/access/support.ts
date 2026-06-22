@@ -122,6 +122,32 @@ export async function listAllTickets(db: Db, ctx: AuthContext) {
   return db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt)).all();
 }
 
+// Viewer-scoped: every ticket (newest first), each with its messages (oldest
+// first) attached under `messages`. Mirrors listMyTicketsWithMessages for staff.
+export async function listAllTicketsWithMessages(db: Db, ctx: AuthContext) {
+  if (!canManage(ctx, TICKET_VIEWER_ROLES)) throw new AuthorizationError();
+  const tickets = await db
+    .select()
+    .from(supportTickets)
+    .orderBy(desc(supportTickets.createdAt))
+    .all();
+  if (tickets.length === 0) return [];
+  const ticketIds = tickets.map((t) => t.id);
+  const messages = await db
+    .select()
+    .from(supportMessages)
+    .where(inArray(supportMessages.ticketId, ticketIds))
+    .orderBy(asc(supportMessages.createdAt))
+    .all();
+  const byTicket = new Map<string, typeof messages>();
+  for (const m of messages) {
+    const list = byTicket.get(m.ticketId) ?? [];
+    list.push(m);
+    byTicket.set(m.ticketId, list);
+  }
+  return tickets.map((t) => ({ ...t, messages: byTicket.get(t.id) ?? [] }));
+}
+
 export async function getTicket(db: Db, ctx: AuthContext, id: string) {
   const ticket = await db.select().from(supportTickets).where(eq(supportTickets.id, id)).get();
   if (!ticket) return null;

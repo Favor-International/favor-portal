@@ -1,48 +1,60 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
-import { getMockGifts, getMockUsers } from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
-import { mapGiftRow, mapUserRow } from "@/lib/api/mappers";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
+import { listAllGifts, listUsersForOverview } from "@/lib/db/access/admin";
 import { logError } from "@/lib/logger";
+import type { Gift, User } from "@/types";
+
+export const runtime = "nodejs";
+
+type GiftRow = Awaited<ReturnType<typeof listAllGifts>>[number];
+type UserRow = Awaited<ReturnType<typeof listUsersForOverview>>[number];
+
+function mapGift(row: GiftRow): Gift {
+  return {
+    id: row.id,
+    userId: row.userId,
+    amount: Number(row.amount),
+    date: row.giftDate,
+    designation: row.designation,
+    blackbaudGiftId: row.blackbaudGiftId ?? undefined,
+    isRecurring: Boolean(row.isRecurring),
+    receiptSent: Boolean(row.receiptSent),
+    source: (row.source ?? "imported") as Gift["source"],
+  };
+}
+
+function mapUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    phone: row.phone ?? undefined,
+    blackbaudConstituentId: row.blackbaudConstituentId ?? undefined,
+    constituentType: row.constituentType as User["constituentType"],
+    lifetimeGivingTotal: Number(row.lifetimeGivingTotal ?? 0),
+    rddAssignment: row.rddAssignment ?? undefined,
+    avatarUrl: row.avatarUrl ?? undefined,
+    isAdmin: Boolean(row.isAdmin),
+    createdAt: row.createdAt ?? "",
+    lastLogin: row.lastLogin ?? undefined,
+  };
+}
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        gifts: getMockGifts(),
-        users: getMockUsers(),
-      });
-    }
+    const auth = await adminRoute("admin:access");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canAccess = await hasAdminPermission(supabase, session.user.id, "admin:access");
-    if (!canAccess) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const [giftResult, userResult] = await Promise.all([
-      supabase.from("giving_cache").select("*").order("gift_date", { ascending: false }),
-      supabase.from("users").select("*").order("created_at", { ascending: false }),
-    ]);
-
-    if (giftResult.error) throw giftResult.error;
-    if (userResult.error) throw userResult.error;
+    const db = getDb();
+    const [gifts, users] = await Promise.all([listAllGifts(db, ctx), listUsersForOverview(db, ctx)]);
 
     return NextResponse.json({
       success: true,
-      gifts: (giftResult.data ?? []).map(mapGiftRow),
-      users: (userResult.data ?? []).map(mapUserRow),
+      gifts: gifts.map(mapGift),
+      users: users.map(mapUser),
     });
   } catch (error) {
     logError({ event: "admin.gifts.fetch_failed", route: "/api/admin/gifts", error });

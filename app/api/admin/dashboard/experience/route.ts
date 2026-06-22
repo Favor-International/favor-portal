@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isDevBypass } from "@/lib/dev-mode";
+import { adminRoute } from "@/lib/api/route-auth";
+import { getDb } from "@/lib/db/client";
 import {
-  getMockDashboardExperienceOverrides,
-  setMockDashboardExperienceOverrides,
-  upsertMockDashboardExperienceOverride,
-} from "@/lib/mock-store";
-import { hasAdminPermission } from "@/lib/api/admin-guard";
+  deleteDashboardOverride,
+  listDashboardOverrides,
+  upsertDashboardOverride,
+} from "@/lib/db/access/content";
+import { AuthorizationError } from "@/lib/db/access/authz";
+import { logAdminAudit } from "@/lib/admin/audit";
 import {
   compactDashboardRoleOverride,
   DASHBOARD_ROLE_KEYS,
@@ -14,50 +15,40 @@ import {
   sanitizeDashboardRoleOverrides,
 } from "@/lib/dashboard/experience-overrides";
 import { logError, logInfo } from "@/lib/logger";
-import type { Json } from "@/types/database";
+
+export const runtime = "nodejs";
+
+type DashboardOverrideRow = {
+  roleKey: (typeof DASHBOARD_ROLE_KEYS)[number];
+  highlights: unknown[];
+  actions: unknown[];
+  updatedAt: string;
+};
 
 export async function GET() {
   try {
-    if (isDevBypass) {
-      return NextResponse.json({
-        success: true,
-        overrides: sanitizeDashboardRoleOverrides(getMockDashboardExperienceOverrides()),
-      });
-    }
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data, error } = await supabase
-      .from("portal_dashboard_overrides")
-      .select("role_key,highlights,actions,updated_at")
-      .order("role_key", { ascending: true });
-
-    if (error) throw error;
+    const rows = (await listDashboardOverrides(getDb(), ctx)) as DashboardOverrideRow[];
 
     const overrides = sanitizeDashboardRoleOverrides(
-      (data ?? []).map((row) => ({
-        roleKey: row.role_key,
-        highlights: row.highlights,
-        actions: row.actions,
-        updatedAt: row.updated_at,
-      }))
+      rows
+        .map((row) => ({
+          roleKey: row.roleKey,
+          highlights: row.highlights,
+          actions: row.actions,
+          updatedAt: row.updatedAt,
+        }))
+        .sort((a, b) => a.roleKey.localeCompare(b.roleKey))
     );
 
     return NextResponse.json({ success: true, overrides });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     logError({
       event: "admin.dashboard_experience.fetch_failed",
       route: "/api/admin/dashboard/experience",
@@ -77,72 +68,42 @@ export async function PUT(request: NextRequest) {
 
     const compactOverride = compactDashboardRoleOverride(override);
 
-    if (isDevBypass) {
-      upsertMockDashboardExperienceOverride({
-        ...compactOverride,
-        updatedAt: new Date().toISOString(),
-      });
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
 
-      return NextResponse.json({
-        success: true,
-        override: compactOverride,
-        overrides: sanitizeDashboardRoleOverrides(getMockDashboardExperienceOverrides()),
-      });
+    const db = getDb();
+
+    let saved;
+    try {
+      saved = (await upsertDashboardOverride(db, ctx, {
+        roleKey: compactOverride.roleKey,
+        highlights: compactOverride.highlights,
+        actions: compactOverride.actions,
+      })) as DashboardOverrideRow | undefined;
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { data: updatedRow, error: updateError } = await supabase
-      .from("portal_dashboard_overrides")
-      .update({
-        highlights: compactOverride.highlights as Json,
-        actions: compactOverride.actions as Json,
-        updated_by: session.user.id,
-      })
-      .eq("role_key", compactOverride.roleKey)
-      .select("role_key,highlights,actions,updated_at")
-      .maybeSingle();
-
-    if (updateError) throw updateError;
-
-    let data = updatedRow;
-    if (!data) {
-      const { data: insertedRow, error: insertError } = await supabase
-        .from("portal_dashboard_overrides")
-        .insert({
-          role_key: compactOverride.roleKey,
-          highlights: compactOverride.highlights as Json,
-          actions: compactOverride.actions as Json,
-          updated_by: session.user.id,
-        })
-        .select("role_key,highlights,actions,updated_at")
-        .single();
-
-      if (insertError) throw insertError;
-      data = insertedRow;
-    }
-
-    if (!data) {
+    if (!saved) {
       return NextResponse.json({ error: "Unable to persist override" }, { status: 500 });
     }
+
+    await logAdminAudit(db, {
+      actorUserId: ctx.userId,
+      action: "admin.dashboard_experience.updated",
+      entityType: "portal_dashboard_override",
+      entityId: compactOverride.roleKey,
+      details: { roleKey: compactOverride.roleKey },
+    });
 
     logInfo({
       event: "admin.dashboard_experience.updated",
       route: "/api/admin/dashboard/experience",
-      userId: session.user.id,
+      userId: ctx.userId,
       details: { roleKey: compactOverride.roleKey },
     });
 
@@ -150,10 +111,10 @@ export async function PUT(request: NextRequest) {
       success: true,
       override: sanitizeDashboardRoleOverride(
         {
-          roleKey: data.role_key,
-          highlights: data.highlights,
-          actions: data.actions,
-          updatedAt: data.updated_at,
+          roleKey: saved.roleKey,
+          highlights: saved.highlights,
+          actions: saved.actions,
+          updatedAt: saved.updatedAt,
         },
         compactOverride.roleKey
       ),
@@ -176,34 +137,34 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Invalid role key" }, { status: 400 });
     }
 
-    if (isDevBypass) {
-      const next = getMockDashboardExperienceOverrides().filter((entry) => entry.roleKey !== roleKey);
-      setMockDashboardExperienceOverrides(next);
-      return NextResponse.json({
-        success: true,
-        overrides: sanitizeDashboardRoleOverrides(next),
-      });
+    const auth = await adminRoute("content:manage");
+    if ("error" in auth) return auth.error;
+    const { ctx } = auth;
+
+    const db = getDb();
+
+    try {
+      await deleteDashboardOverride(db, ctx, roleKey as (typeof DASHBOARD_ROLE_KEYS)[number]);
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      throw error;
     }
 
-    const supabase = await createClient();
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
+    const rows = (await listDashboardOverrides(db, ctx)) as DashboardOverrideRow[];
+    const overrides = sanitizeDashboardRoleOverrides(
+      rows
+        .map((row) => ({
+          roleKey: row.roleKey,
+          highlights: row.highlights,
+          actions: row.actions,
+          updatedAt: row.updatedAt,
+        }))
+        .sort((a, b) => a.roleKey.localeCompare(b.roleKey))
+    );
 
-    if (authError || !session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const canManage = await hasAdminPermission(supabase, session.user.id, "content:manage");
-    if (!canManage) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { error } = await supabase.from("portal_dashboard_overrides").delete().eq("role_key", roleKey);
-    if (error) throw error;
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, overrides });
   } catch (error) {
     logError({
       event: "admin.dashboard_experience.delete_failed",
