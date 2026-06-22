@@ -10,6 +10,7 @@ const eslintConfig = defineConfig([
       // This app intentionally hydrates local/mock state in effects in several client modules.
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/preserve-manual-memoization": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
   // Override default ignores of eslint-config-next.
