@@ -10,7 +10,7 @@
     "directory": ".open-next/assets"
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "favor-portal", "database_id": "d783ef09-a0c0-46f4-b4f8-4ec60450d21f" }
+    { "binding": "DB", "database_name": "favor-portal", "database_id": "d783ef09-a0c0-46f4-b4f8-4ec60450d21f", "migrations_dir": "db/migrations" }
   ],
   "kv_namespaces": [
     { "binding": "SESSIONS", "id": "28d6630f10a54afaa923434eae0d02de" },
