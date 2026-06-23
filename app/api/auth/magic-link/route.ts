@@ -52,39 +52,47 @@ export async function POST(request: NextRequest) {
     const email = rawEmail.toLowerCase();
     const db = getDb();
 
-    const existing = await db
-      .select({ id: users.id, isAdmin: users.isAdmin })
-      .from(users)
-      .where(eq(users.email, email))
-      .get();
+    // Dev mode = no email provider configured. The magic link is returned in the
+    // response (devLink) for ANY email instead of being emailed, and the
+    // production "don't reveal whether the account exists" gate is skipped so you
+    // can log in without a real inbox. This auto-disables once RESEND_API_KEY is set.
+    const devMode = !process.env.RESEND_API_KEY;
 
-    let canProvisionFromSky = false;
-    if (!existing && scope === "portal") {
-      try {
-        canProvisionFromSky = Boolean(await blackbaudClient.getConstituentByEmail(email));
-      } catch (skyError) {
-        logError({ event: "auth.magic_link.sky_lookup_failed", route: "/api/auth/magic-link", error: skyError });
+    if (!devMode) {
+      const existing = await db
+        .select({ id: users.id, isAdmin: users.isAdmin })
+        .from(users)
+        .where(eq(users.email, email))
+        .get();
+
+      let canProvisionFromSky = false;
+      if (!existing && scope === "portal") {
+        try {
+          canProvisionFromSky = Boolean(await blackbaudClient.getConstituentByEmail(email));
+        } catch (skyError) {
+          logError({ event: "auth.magic_link.sky_lookup_failed", route: "/api/auth/magic-link", error: skyError });
+        }
       }
-    }
 
-    // Don't reveal whether the account exists.
-    if (!existing && !canProvisionFromSky) {
-      return NextResponse.json(GENERIC_OK);
-    }
-    if (scope === "admin") {
-      if (!existing) return NextResponse.json(GENERIC_OK);
-      const roleRows = await db
-        .select({ roleKey: userRoles.roleKey })
-        .from(userRoles)
-        .where(eq(userRoles.userId, existing.id))
-        .all();
-      const permissions = resolveAdminPermissions(Boolean(existing.isAdmin), roleRows.map((r) => r.roleKey));
-      if (!hasAdminPermission("admin:access", permissions)) return NextResponse.json(GENERIC_OK);
+      // Don't reveal whether the account exists.
+      if (!existing && !canProvisionFromSky) {
+        return NextResponse.json(GENERIC_OK);
+      }
+      if (scope === "admin") {
+        if (!existing) return NextResponse.json(GENERIC_OK);
+        const roleRows = await db
+          .select({ roleKey: userRoles.roleKey })
+          .from(userRoles)
+          .where(eq(userRoles.userId, existing.id))
+          .all();
+        const permissions = resolveAdminPermissions(Boolean(existing.isAdmin), roleRows.map((r) => r.roleKey));
+        if (!hasAdminPermission("admin:access", permissions)) return NextResponse.json(GENERIC_OK);
+      }
     }
 
     const token = await createMagicLinkToken(env.SESSIONS, { email, scope, redirectTo });
 
-    if (process.env.RESEND_API_KEY) {
+    if (!devMode) {
       await sendMagicLinkEmail(email, token);
       logInfo({ event: "auth.magic_link.sent", route: "/api/auth/magic-link", details: { scope } });
       return NextResponse.json({ success: true, message: "Magic link sent successfully" });
