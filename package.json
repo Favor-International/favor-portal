@@ -7,7 +7,8 @@
   },
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build --webpack",
+    "build": "next build --webpack && npm run cf:build",
+    "build:next": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -22,8 +23,8 @@
     "test:e2e:report": "playwright show-report",
     "test:e2e:install": "playwright install chromium",
     "cf:build": "opennextjs-cloudflare build --skipNextBuild",
-    "preview": "npm run build && npm run cf:build && opennextjs-cloudflare preview",
-    "deploy": "npm run build && npm run cf:build && opennextjs-cloudflare deploy"
+    "preview": "npm run build && opennextjs-cloudflare preview",
+    "deploy": "npm run build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
