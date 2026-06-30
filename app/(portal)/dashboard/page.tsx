@@ -177,7 +177,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
       {/* HERO WELCOME BAND */}
       <section className="glass-enter relative overflow-hidden rounded-3xl border border-white/10 px-6 py-10 sm:px-10 sm:py-12">
         {/* Brand field photography with green scrim */}
