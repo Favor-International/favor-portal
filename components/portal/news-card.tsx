@@ -41,7 +41,7 @@ export function NewsCard({ item, variant = 'default', className }: NewsCardProps
         )}
       >
         {/* Placeholder thumbnail */}
-        <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#2b4d24]/10 to-[#8b957b]/10">
+        <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-[#2b4d24]/10 to-[#8b957b]/10">
           <CatIcon className="h-6 w-6 text-[#2b4d24]/40" />
         </div>
         <div className="min-w-0 flex-1">
@@ -77,7 +77,7 @@ export function NewsCard({ item, variant = 'default', className }: NewsCardProps
       )}
     >
       {/* Placeholder image area */}
-      <div className="relative aspect-[16/9] bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF]">
+      <div className="relative aspect-[16/9] bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF]">
         <div className="flex h-full items-center justify-center">
           <CatIcon className="h-10 w-10 text-[#c5ccc2]" />
         </div>

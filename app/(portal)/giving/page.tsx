@@ -353,7 +353,7 @@ function GivingPageContent() {
 
           {/* Impact */}
           <Link href="/giving/impact" className="block">
-            <Card className="bg-gradient-to-br from-[#2b4d24] to-[#3d6633] text-white cursor-pointer hover:opacity-95 transition-opacity">
+            <Card className="bg-linear-to-br from-[#2b4d24] to-[#3d6633] text-white cursor-pointer hover:opacity-95 transition-opacity">
               <CardContent className="space-y-4 p-5">
                 <p className="text-xs font-medium uppercase tracking-wider text-white/60">Your Impact</p>
                 <div className="text-center">

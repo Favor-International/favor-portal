@@ -227,7 +227,7 @@ function ContentPageContent() {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -311,7 +311,7 @@ function ContentPageContent() {
             {featured.map((item) => (
               <Link key={item.id} href={`/content/${item.id}`} className="group">
                 <Card className="glass-hover overflow-hidden">
-                  <div className="relative aspect-[16/9] bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF]">
+                  <div className="relative aspect-[16/9] bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF]">
                     {item.coverImage && (
                       <Image
                         src={item.coverImage}
@@ -321,7 +321,7 @@ function ContentPageContent() {
                         className="object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/50 to-transparent" />
                     <div className="absolute bottom-3 left-3 right-3">
                       <Badge
                         className={`text-[10px] border ${typeColor(item.type)}`}
@@ -560,7 +560,7 @@ function ContentGridCard({
   return (
     <Card className="glass-hover overflow-hidden group">
       {item.coverImage && (
-        <div className="relative aspect-[2/1] bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF]">
+        <div className="relative aspect-[2/1] bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF]">
           <Image
             src={item.coverImage}
             alt={item.title}
@@ -659,7 +659,7 @@ function ContentListCard({
     <Card className="glass-hover">
       <CardContent className="p-4 flex gap-4">
         {item.coverImage ? (
-          <div className="hidden sm:block w-28 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF]">
+          <div className="hidden sm:block w-28 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF]">
             <Image
               src={item.coverImage}
               alt={item.title}
@@ -669,7 +669,7 @@ function ContentListCard({
             />
           </div>
         ) : (
-          <div className="hidden sm:flex w-28 h-20 rounded-lg flex-shrink-0 bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF] items-center justify-center">
+          <div className="hidden sm:flex w-28 h-20 rounded-lg flex-shrink-0 bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF] items-center justify-center">
             <FileText className="h-6 w-6 text-[#c5ccc2]" />
           </div>
         )}

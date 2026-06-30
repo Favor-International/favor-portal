@@ -973,7 +973,7 @@ export default function CourseDetailPage() {
 
         <div className="space-y-6">
           <Card className="glass-pane overflow-hidden">
-            <div className="relative aspect-video bg-gradient-to-br from-[#2b4d24]/15 to-[#8b957b]/10 flex items-center justify-center">
+            <div className="relative aspect-video bg-linear-to-br from-[#2b4d24]/15 to-[#8b957b]/10 flex items-center justify-center">
               <PlayCircle className="h-12 w-12 text-[#2b4d24]" />
             </div>
             <CardContent className="p-5 space-y-3">

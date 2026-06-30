@@ -291,7 +291,7 @@ export default function ContentDetailPage() {
       <Card className="glass-pane overflow-hidden">
         {/* Cover image */}
         {item.coverImage && (
-          <div className="relative aspect-[16/7] bg-gradient-to-br from-[#FAF9F6] to-[#F5F3EF]">
+          <div className="relative aspect-[16/7] bg-linear-to-br from-[#FAF9F6] to-[#F5F3EF]">
             <Image
               src={item.coverImage}
               alt={item.title}

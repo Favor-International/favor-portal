@@ -35,7 +35,7 @@ export function CourseCard({
   return (
     <Card className="flex flex-col overflow-hidden">
       {/* Thumbnail */}
-      <div className="relative aspect-video bg-gradient-to-br from-[#2b4d24]/20 to-[#2b4d24]/10">
+      <div className="relative aspect-video bg-linear-to-br from-[#2b4d24]/20 to-[#2b4d24]/10">
         {course.thumbnailUrl ? (
           <Image
             src={course.thumbnailUrl}

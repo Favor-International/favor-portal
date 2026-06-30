@@ -184,7 +184,7 @@ export default function ImpactPage() {
       </div>
 
       {/* Hero Stats */}
-      <Card className="bg-gradient-to-br from-[#2b4d24] to-[#3d6633] text-white overflow-hidden">
+      <Card className="bg-linear-to-br from-[#2b4d24] to-[#3d6633] text-white overflow-hidden">
         <CardContent className="p-8">
           <div className="grid gap-8 lg:grid-cols-2">
             <div className="space-y-4">
@@ -332,7 +332,7 @@ export default function ImpactPage() {
               { name: "Dar es Salaam", country: "Tanzania", gifts: 6, lives: 189 },
             ].map((community) => (
               <Card key={community.name} className="overflow-hidden">
-                <div className="h-24 bg-gradient-to-br from-[#2b4d24] to-[#3d6633]" />
+                <div className="h-24 bg-linear-to-br from-[#2b4d24] to-[#3d6633]" />
                 <CardContent className="p-4 -mt-8">
                   <div className="rounded-full h-16 w-16 bg-white flex items-center justify-center shadow-lg mx-auto mb-3">
                     <Globe className="h-8 w-8 text-[#2b4d24]" />
