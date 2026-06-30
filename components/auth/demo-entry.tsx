@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2, ShieldCheck, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -9,7 +8,6 @@ type Persona = 'partner' | 'admin';
 
 export function DemoEntry() {
   const [loading, setLoading] = useState<Persona | null>(null);
-  const router = useRouter();
 
   const enter = async (persona: Persona) => {
     setLoading(persona);
@@ -21,7 +19,8 @@ export function DemoEntry() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Could not enter demo');
-      router.push(data.redirectTo || '/dashboard');
+      // Full navigation so AuthProvider re-initializes with the new session cookie.
+      window.location.assign(data.redirectTo || '/dashboard');
     } catch {
       toast.error('Could not enter the demo. Please try again.');
       setLoading(null);

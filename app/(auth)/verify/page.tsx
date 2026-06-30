@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,7 +17,6 @@ function LoadingState() {
 }
 
 function VerifyContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') ?? searchParams.get('token_hash');
   const scope = searchParams.get('scope') === 'admin' ? 'admin' : 'portal';
@@ -61,7 +60,8 @@ function VerifyContent() {
               ? '/admin'
               : '/dashboard';
         setTimeout(() => {
-          router.push(target);
+          // Full navigation so AuthProvider re-initializes with the new session cookie.
+          window.location.assign(target);
         }, 1500);
       } catch (error) {
         setStatus('error');
@@ -72,7 +72,7 @@ function VerifyContent() {
     }
 
     verifyToken();
-  }, [token, router, scope, redirectParam]);
+  }, [token, scope, redirectParam]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-transparent">
@@ -106,7 +106,7 @@ function VerifyContent() {
             <h1 className="font-sans tracking-tight text-2xl text-[#1a1a1a]">Verification Failed</h1>
             <p className="mt-2 text-[#666666]">{errorMessage}</p>
             <button 
-              onClick={() => router.push(scope === 'admin' ? '/admin/login' : '/login')}
+              onClick={() => window.location.assign(scope === 'admin' ? '/admin/login' : '/login')}
               className="mt-4 text-[#2b4d24] underline"
             >
               Back to login
