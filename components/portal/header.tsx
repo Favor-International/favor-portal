@@ -25,7 +25,7 @@ export function Header() {
     <header className="glass-bar sticky top-0 z-50 flex h-16 items-center justify-between px-6">
       {/* Left side - Breadcrumb or page title could go here */}
       <div className="flex items-center">
-        <h1 className="font-['Cormorant_Garamond'] text-xl font-semibold text-[#2b4d24]">
+        <h1 className="font-sans tracking-tight text-xl font-semibold text-[#2b4d24]">
           Partner Portal
         </h1>
       </div>

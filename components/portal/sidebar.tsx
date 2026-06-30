@@ -56,7 +56,7 @@ export function Sidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2b4d24]">
             <Heart className="h-4 w-4 text-[#FFFEF9]" />
           </div>
-          <span className="font-['Cormorant_Garamond'] text-xl font-semibold text-[#2b4d24]">
+          <span className="font-sans tracking-tight text-xl font-semibold text-[#2b4d24]">
             Favor
           </span>
         </Link>

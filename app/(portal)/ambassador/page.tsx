@@ -44,7 +44,7 @@ export default function AmbassadorDashboardPage() {
     <div className="space-y-8">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="font-['Cormorant_Garamond'] text-3xl font-semibold text-[#1a1a1a] mb-2">
+          <h1 className="font-sans tracking-tight text-3xl font-semibold text-[#1a1a1a] mb-2">
             Ambassador Portal
           </h1>
           <p className="text-[#666666]">
@@ -61,7 +61,7 @@ export default function AmbassadorDashboardPage() {
         <Card className="glass-hero border border-white/15 bg-[#2b4d24]/90 text-[#FFFEF9]">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#FFFEF9]/70">Total Funds Raised</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#FFFEF9]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#FFFEF9]">
               {formatCurrency(fundsRaised)}
             </CardTitle>
           </CardHeader>
@@ -69,7 +69,7 @@ export default function AmbassadorDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Network Size</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {networkSize}
             </CardTitle>
           </CardHeader>
@@ -77,7 +77,7 @@ export default function AmbassadorDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Events Hosted</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {eventsHosted}
             </CardTitle>
           </CardHeader>
@@ -85,7 +85,7 @@ export default function AmbassadorDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Referrals</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {referralsMade}
             </CardTitle>
           </CardHeader>
@@ -125,7 +125,7 @@ export default function AmbassadorDashboardPage() {
             {/* Monthly Goals */}
             <Card>
               <CardHeader>
-                <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a] flex items-center gap-2">
+                <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a] flex items-center gap-2">
                   <Target className="h-5 w-5 text-[#2b4d24]" />
                   Monthly Goals
                 </CardTitle>
@@ -158,7 +158,7 @@ export default function AmbassadorDashboardPage() {
             {/* Recent Activity */}
             <Card>
               <CardHeader>
-                <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a] flex items-center gap-2">
+                <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a] flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-[#2b4d24]" />
                   Recent Activity
                 </CardTitle>
@@ -210,7 +210,7 @@ export default function AmbassadorDashboardPage() {
                     <Share2 className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Share Your Link
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -236,7 +236,7 @@ export default function AmbassadorDashboardPage() {
                     <Download className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Download Resources
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -257,7 +257,7 @@ export default function AmbassadorDashboardPage() {
                     <Mail className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Email Templates
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -278,7 +278,7 @@ export default function AmbassadorDashboardPage() {
                     <Megaphone className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Social Media Kit
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -304,7 +304,7 @@ export default function AmbassadorDashboardPage() {
                       <Calendar className="h-6 w-6 text-[#2b4d24]" />
                     </div>
                     <div>
-                      <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                      <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                         Spring Fundraising Dinner
                       </h3>
                       <p className="text-sm text-[#666666]">March 15, 2025 • 6:00 PM</p>
@@ -324,7 +324,7 @@ export default function AmbassadorDashboardPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a] flex items-center gap-2">
+                <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a] flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-[#2b4d24]" />
                   Host an Event
                 </CardTitle>
@@ -362,7 +362,7 @@ export default function AmbassadorDashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="glass-pane border border-[#b08b3e]/30 bg-[#b08b3e]/10">
               <CardHeader>
-                <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a] flex items-center gap-2">
+                <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a] flex items-center gap-2">
                   <Award className="h-5 w-5 text-[#FFD700]" />
                   Your Achievements
                 </CardTitle>
@@ -396,7 +396,7 @@ export default function AmbassadorDashboardPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a]">
+                <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a]">
                   Ambassador Leaderboard
                 </CardTitle>
                 <CardDescription className="text-[#666666]">

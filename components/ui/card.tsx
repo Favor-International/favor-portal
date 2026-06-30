@@ -9,7 +9,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "glass-pane glass-transition text-[#1a1a1a] flex flex-col gap-6 rounded-2xl py-6",
+        "glass-pane glass-transition text-[#1a1a1a] flex flex-col gap-6 rounded-xl py-6",
         className
       )}
       {...props}
@@ -35,7 +35,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-title"
       className={cn(
-        "font-['Cormorant_Garamond'] text-2xl font-medium leading-none",
+        "font-sans tracking-tight text-2xl font-medium leading-none",
         className
       )}
       {...props}

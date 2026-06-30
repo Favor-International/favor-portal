@@ -18,5 +18,9 @@
   ],
   "r2_buckets": [
     { "binding": "R2", "bucket_name": "favor-portal-assets" }
-  ]
+  ],
+  "vars": {
+    "DEMO_MODE": "true",
+    "NEXT_PUBLIC_APP_URL": "https://favor-portal.marketing-6e9.workers.dev"
+  }
 }

@@ -36,7 +36,7 @@ export const APP_CONFIG = {
   name: 'Favor International',
   tagline: 'Transformed Hearts Transform Nations',
   domain: 'portal.favorintl.org',
-  logo: 'https://storage.googleapis.com/msgsndr/LblL0AiRWSIvV6fFQuRT/media/67bf4d8383ae0d6d7dc507fe.png',
+  logo: '/brand/favor-logo-color.png',
   colors: {
     // Canvas - 80%
     white: '#FFFFFF',
@@ -59,7 +59,7 @@ export const APP_CONFIG = {
     lightGray: '#999999'
   },
   fonts: {
-    headline: 'Cormorant Garamond',
+    headline: 'Montserrat',
     body: 'Montserrat'
   }
 } as const;

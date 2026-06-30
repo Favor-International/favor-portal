@@ -179,7 +179,23 @@ export default function DashboardPage() {
   return (
     <div className="space-y-12">
       {/* HERO WELCOME BAND */}
-      <section className="glass-enter relative overflow-hidden rounded-3xl bg-[#2b4d24]/90 backdrop-blur-xl border border-white/10 px-6 py-10 sm:px-10 sm:py-12">
+      <section className="glass-enter relative overflow-hidden rounded-3xl border border-white/10 px-6 py-10 sm:px-10 sm:py-12">
+        {/* Brand field photography with green scrim */}
+        <Image
+          src="/brand/hero-congo-grads.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(120deg, rgba(31,58,26,0.94) 0%, rgba(31,58,26,0.80) 45%, rgba(31,58,26,0.55) 100%)',
+          }}
+        />
         {/* Decorative circles */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-white/5" />

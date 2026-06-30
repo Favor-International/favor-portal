@@ -62,7 +62,7 @@ export function CourseCard({
       </div>
 
       <CardHeader className="pb-2">
-        <CardTitle className="font-['Cormorant_Garamond'] text-xl line-clamp-1">
+        <CardTitle className="font-sans tracking-tight text-xl line-clamp-1">
           {course.title}
         </CardTitle>
         <CardDescription className="line-clamp-2">

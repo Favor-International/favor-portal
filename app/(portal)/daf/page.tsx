@@ -38,7 +38,7 @@ export default function DafDashboardPage() {
     <div className="space-y-8">
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="font-['Cormorant_Garamond'] text-3xl font-semibold text-[#1a1a1a] mb-2">
+          <h1 className="font-sans tracking-tight text-3xl font-semibold text-[#1a1a1a] mb-2">
             DAF Donor Portal
           </h1>
           <p className="text-[#666666]">
@@ -55,7 +55,7 @@ export default function DafDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Lifetime DAF Grants</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {formatCurrency(totalGiven)}
             </CardTitle>
           </CardHeader>
@@ -63,7 +63,7 @@ export default function DafDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">YTD Grants</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {formatCurrency(ytdGiven)}
             </CardTitle>
           </CardHeader>
@@ -71,7 +71,7 @@ export default function DafDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Total Grants</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {dafGifts.length}
             </CardTitle>
           </CardHeader>
@@ -79,7 +79,7 @@ export default function DafDashboardPage() {
         <Card className="glass-pane">
           <CardHeader className="pb-2">
             <CardDescription className="text-[#666666]">Avg Grant Size</CardDescription>
-            <CardTitle className="font-['Cormorant_Garamond'] text-3xl text-[#2b4d24]">
+            <CardTitle className="font-sans tracking-tight text-3xl text-[#2b4d24]">
               {dafGifts.length > 0 
                 ? formatCurrency(totalGiven / dafGifts.length) 
                 : formatCurrency(0)}
@@ -136,13 +136,13 @@ export default function DafDashboardPage() {
                           <Gift className="h-5 w-5 text-[#2b4d24]" />
                         </div>
                         <div>
-                          <h3 className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a]">
+                          <h3 className="font-sans tracking-tight text-xl text-[#1a1a1a]">
                             {gift.designation}
                           </h3>
                           <p className="text-sm text-[#666666]">{formatDate(gift.date)}</p>
                         </div>
                       </div>
-                      <p className="text-2xl font-['Cormorant_Garamond'] font-semibold text-[#2b4d24]">
+                      <p className="text-2xl font-sans tracking-tight font-semibold text-[#2b4d24]">
                         {formatCurrency(gift.amount)}
                       </p>
                     </div>
@@ -156,7 +156,7 @@ export default function DafDashboardPage() {
         <TabsContent value="recommend" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="font-['Cormorant_Garamond'] text-xl text-[#1a1a1a]">
+              <CardTitle className="font-sans tracking-tight text-xl text-[#1a1a1a]">
                 Recommend a Grant to Favor International
               </CardTitle>
               <CardDescription className="text-[#666666]">
@@ -210,7 +210,7 @@ export default function DafDashboardPage() {
                     <FileText className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Annual Report
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -231,7 +231,7 @@ export default function DafDashboardPage() {
                     <TrendingUp className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Impact Dashboard
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -252,7 +252,7 @@ export default function DafDashboardPage() {
                     <Building2 className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       DAF Grant Guidelines
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">
@@ -273,7 +273,7 @@ export default function DafDashboardPage() {
                     <Gift className="h-6 w-6 text-[#2b4d24]" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-['Cormorant_Garamond'] text-lg font-semibold text-[#1a1a1a] mb-1">
+                    <h3 className="font-sans tracking-tight text-lg font-semibold text-[#1a1a1a] mb-1">
                       Legacy Giving Guide
                     </h3>
                     <p className="text-sm text-[#666666] mb-3">

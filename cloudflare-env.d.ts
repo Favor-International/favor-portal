@@ -15,6 +15,9 @@ declare global {
     RATE_LIMIT: KVNamespace;
     R2: R2Bucket;
     ASSETS: Fetcher;
+    // Vars (see wrangler.jsonc). Present only in the `demo` environment.
+    DEMO_MODE?: string;
+    NEXT_PUBLIC_APP_URL?: string;
   }
 }
 

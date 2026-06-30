@@ -7,7 +7,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-montserrat), var(--font-geist-sans), system-ui, sans-serif;
-  --font-serif: var(--font-cormorant), Georgia, serif;
+  --font-serif: var(--font-montserrat), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -42,7 +42,11 @@
   --color-favor-green: #2b4d24;
   --color-favor-sage: #b8c4b2;
   --color-favor-sage-dark: #8b957b;
-  --color-favor-gold: #b08b3e;
+  --color-favor-gold: #e1a730;
+  --color-favor-gold-light: #e0c081;
+  --color-favor-gold-dark: #cf962a;
+  --color-favor-terracotta: #a36d4c;
+  --color-favor-tan: #ba9a86;
   --color-favor-charcoal: #1a1a1a;
   --color-favor-gray: #666666;
   --radius-sm: calc(var(--radius) - 4px);
@@ -114,8 +118,9 @@
     background-attachment: fixed;
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-cormorant), Georgia, serif;
-    font-weight: 500;
+    font-family: var(--font-montserrat), system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
 }
 

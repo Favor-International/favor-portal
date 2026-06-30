@@ -80,7 +80,7 @@ export function MagicLinkForm({
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#2b4d24]/10">
             <Mail className="h-6 w-6 text-[#2b4d24]" />
           </div>
-          <CardTitle className="font-['Cormorant_Garamond'] text-2xl font-normal text-[#1a1a1a]">
+          <CardTitle className="font-sans tracking-tight text-2xl font-normal text-[#1a1a1a]">
             {sentTitle}
           </CardTitle>
           <CardDescription className="text-[#666666]">
@@ -112,7 +112,7 @@ export function MagicLinkForm({
   return (
     <Card className="w-full max-w-md border-[#c5ccc2]">
       <CardHeader className="text-center">
-        <CardTitle className="font-['Cormorant_Garamond'] text-3xl font-normal text-[#1a1a1a]">
+        <CardTitle className="font-sans tracking-tight text-3xl font-normal text-[#1a1a1a]">
           {title}
         </CardTitle>
         <CardDescription className="text-[#666666]">

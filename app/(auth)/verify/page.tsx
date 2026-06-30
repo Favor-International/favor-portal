@@ -91,7 +91,7 @@ function VerifyContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h1 className="font-['Cormorant_Garamond'] text-2xl text-[#1a1a1a]">Login Successful!</h1>
+            <h1 className="font-sans tracking-tight text-2xl text-[#1a1a1a]">Login Successful!</h1>
             <p className="mt-2 text-[#666666]">Redirecting to your dashboard...</p>
           </>
         )}
@@ -103,7 +103,7 @@ function VerifyContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="font-['Cormorant_Garamond'] text-2xl text-[#1a1a1a]">Verification Failed</h1>
+            <h1 className="font-sans tracking-tight text-2xl text-[#1a1a1a]">Verification Failed</h1>
             <p className="mt-2 text-[#666666]">{errorMessage}</p>
             <button 
               onClick={() => router.push(scope === 'admin' ? '/admin/login' : '/login')}
