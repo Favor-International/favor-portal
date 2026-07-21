@@ -18,6 +18,10 @@ declare global {
     // Vars (see wrangler.jsonc). Present only in the `demo` environment.
     DEMO_MODE?: string;
     NEXT_PUBLIC_APP_URL?: string;
+    // Favor giving gateway (favor-astro app; owns the Blackbaud OAuth token).
+    // GIVING_API_BASE is a var; PORTAL_GIVING_API_KEY is a Worker secret.
+    GIVING_API_BASE?: string;
+    PORTAL_GIVING_API_KEY?: string;
   }
 }
 
