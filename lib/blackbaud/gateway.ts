@@ -63,6 +63,19 @@ export function givingGatewayConfigured(): boolean {
   return gatewayEnv() !== null;
 }
 
+/**
+ * Constituent lookup for sign-in provisioning: any donor who exists in
+ * Favor's Blackbaud CRM can request a magic link and get a portal account,
+ * pre-linked to their constituent record. Returns null when the gateway is
+ * unavailable or no constituent matches.
+ */
+export async function fetchConstituentByEmail(
+  email: string
+): Promise<{ id: string; name: string | null; email: string } | null> {
+  const live = await fetchGivingHistoryByEmail(email);
+  return live?.constituent ?? null;
+}
+
 export type RecurringAction =
   | { action: "pause" | "resume" | "cancel" }
   | { amount: number };
