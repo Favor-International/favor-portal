@@ -63,6 +63,45 @@ export function givingGatewayConfigured(): boolean {
   return gatewayEnv() !== null;
 }
 
+export type RecurringAction =
+  | { action: "pause" | "resume" | "cancel" }
+  | { amount: number };
+
+/**
+ * Manage a recurring gift (pause/resume/cancel or change amount) through the
+ * gateway. The gateway verifies the gift belongs to the constituent matching
+ * this email before acting. Throws on failure with a donor-safe message.
+ */
+export async function manageRecurringGift(
+  email: string,
+  giftId: string,
+  input: RecurringAction
+): Promise<{ ok: boolean; status?: string; amount?: number }> {
+  const cfg = gatewayEnv();
+  if (!cfg) throw new Error("Giving management is not configured");
+  const res = await fetch(`${cfg.base}/api/portal/recurring`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, gift_id: giftId, ...input }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    status?: string;
+    amount?: number;
+    message?: string;
+  };
+  if (!res.ok || !data.ok) {
+    logError({
+      event: "giving.gateway.recurring_action_failed",
+      route: "gateway:/api/portal/recurring",
+      error: new Error(`gateway ${res.status}: ${data.message ?? "unknown"}`),
+    });
+    throw new Error(data.message ?? "The change could not be completed");
+  }
+  return { ok: true, status: data.status, amount: data.amount };
+}
+
 /**
  * Fetch live giving history for an email. Returns null when the gateway is
  * not configured or unavailable so callers can fall back to the local

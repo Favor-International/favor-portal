@@ -11,19 +11,21 @@ import { usePreferences } from "@/hooks/use-preferences";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Mail, MessageSquare, Mailbox, FileBarChart, ShieldCheck, Save, Check, Download,
-  Newspaper, CalendarDays, ReceiptText, Smartphone, Package, HelpCircle,
+  Newspaper, CalendarDays, ReceiptText, Smartphone, Package, HelpCircle, KeyRound,
   type LucideIcon,
 } from "lucide-react";
+import { SetPasswordCard } from "@/components/auth/set-password-card";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
-type SectionId = "communications" | "reports" | "privacy";
+type SectionId = "communications" | "reports" | "security" | "privacy";
 
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "communications", label: "Communications & Stories", icon: Mail },
   { id: "reports", label: "Impact Reports", icon: FileBarChart },
+  { id: "security", label: "Sign-in & Security", icon: KeyRound },
   { id: "privacy", label: "Privacy & Help", icon: ShieldCheck },
 ];
 
@@ -215,6 +217,8 @@ export default function SettingsPage() {
               </Button>
             </>
           )}
+
+          {section === "security" && <SetPasswordCard />}
 
           {section === "reports" && (
             <Card>

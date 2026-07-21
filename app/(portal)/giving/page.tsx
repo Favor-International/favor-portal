@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Heart, Download, Repeat, Calendar, ArrowRight, TrendingUp, Target } from "lucide-react";
 import Link from "next/link";
 import { SectionHeader } from "@/components/portal/section-header";
+import { RecurringManager } from "@/components/giving/recurring-manager";
 import { EmptyState } from "@/components/portal/empty-state";
 import { GiveNowDialog } from "@/components/portal/give-now-dialog";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
@@ -174,6 +175,9 @@ function GivingPageContent() {
         </div>
         <GiveNowDialog onGiftComplete={() => setRefreshKey((k) => k + 1)} />
       </div>
+
+      {/* Live monthly partnership: manage it, or an invitation to start one */}
+      <RecurringManager />
 
       {/* Summary Stats */}
       <div className="grid gap-4 sm:grid-cols-3">

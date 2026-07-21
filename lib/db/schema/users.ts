@@ -30,6 +30,8 @@ export const users = sqliteTable("users", {
   lifetimeGivingTotal: real("lifetime_giving_total").default(0),
   rddAssignment: text("rdd_assignment"),
   avatarUrl: text("avatar_url"),
+  // Optional password login (PBKDF2, lib/auth/password.ts). Null = magic-link only.
+  passwordHash: text("password_hash"),
   isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
   onboardingRequired: integer("onboarding_required", { mode: "boolean" }).notNull().default(false),
   onboardingCompletedAt: text("onboarding_completed_at"),

@@ -22,6 +22,9 @@ declare global {
     // GIVING_API_BASE is a var; PORTAL_GIVING_API_KEY is a Worker secret.
     GIVING_API_BASE?: string;
     PORTAL_GIVING_API_KEY?: string;
+    // Email (Resend). RESEND_API_KEY is a Worker secret; RESEND_FROM is a var.
+    RESEND_API_KEY?: string;
+    RESEND_FROM?: string;
   }
 }
 
