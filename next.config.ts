@@ -30,6 +30,29 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Phase-1 archived surfaces: routes are private-foldered (non-routable).
+  // Redirect any stale bookmark to the live giving surfaces instead of 404.
+  async redirects() {
+    const toGiving = ["/giving/goals", "/giving/impact", "/giving/recurring"];
+    const toDashboard = [
+      "/courses",
+      "/content",
+      "/assistant",
+      "/ambassador",
+      "/church",
+      "/daf",
+      "/foundation",
+      "/major-donor",
+      "/volunteer",
+      "/support",
+    ];
+    return [
+      ...toGiving.map((source) => ({ source, destination: "/giving", permanent: false })),
+      ...toGiving.map((source) => ({ source: `${source}/:path*`, destination: "/giving", permanent: false })),
+      ...toDashboard.map((source) => ({ source, destination: "/dashboard", permanent: false })),
+      ...toDashboard.map((source) => ({ source: `${source}/:path*`, destination: "/dashboard", permanent: false })),
+    ];
+  },
 };
 
 export default nextConfig;

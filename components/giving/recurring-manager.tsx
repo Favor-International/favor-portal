@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
+import { giveUrl } from '@/lib/give-links';
 import { toast } from 'sonner';
 
 // Live recurring giving management, straight from Raiser's Edge NXT through
@@ -24,7 +25,7 @@ interface Schedule {
   date: string | null;
 }
 
-const GIVE_MONTHLY_URL = 'https://favor-astro.pages.dev/give/donate/?frequency=monthly';
+const GIVE_MONTHLY_URL = giveUrl('monthly');
 
 export function RecurringManager() {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);

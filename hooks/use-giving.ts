@@ -34,32 +34,25 @@ export function useGiving(userId: string | undefined, refreshKey?: number): UseG
       try {
         setIsLoading(true);
 
-        const [historyRes, recurringRes] = await Promise.all([
-          fetch('/api/giving/history', { credentials: 'include' }),
-          fetch('/api/giving/recurring', { credentials: 'include' }),
-        ]);
+        // Giving history is served live-first from Blackbaud (Raiser's Edge
+        // NXT) via the gateway. Recurring schedules are managed separately
+        // through the live RecurringManager (/api/giving/recurring-live), so
+        // this hook no longer reads the legacy local-cache recurring endpoint.
+        const historyRes = await fetch('/api/giving/history', { credentials: 'include' });
 
         if (!historyRes.ok) {
           throw new Error(`Failed to load giving history (${historyRes.status})`);
         }
-        if (!recurringRes.ok) {
-          throw new Error(`Failed to load recurring gifts (${recurringRes.status})`);
-        }
 
         const historyData = await historyRes.json();
-        const recurringData = await recurringRes.json();
         if (cancelled) return;
 
         const loadedGifts = ((historyData.gifts ?? []) as Gift[])
           .slice()
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        const loadedRecurring = ((recurringData.gifts ?? []) as RecurringGift[]).filter(
-          (gift) => gift.status === 'active'
-        );
-
         setGifts(loadedGifts);
-        setRecurringGifts(loadedRecurring);
+        setRecurringGifts([]);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Unknown error'));

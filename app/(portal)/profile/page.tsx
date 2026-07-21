@@ -165,7 +165,7 @@ export default function ProfilePage() {
             </div>
           </div>
           <Button className="bg-white text-[#2b4d24] hover:bg-white/90" asChild>
-            <Link href="/giving/impact"><Sparkles className="mr-2 h-4 w-4" />Your impact</Link>
+            <Link href="/giving"><Sparkles className="mr-2 h-4 w-4" />Your giving</Link>
           </Button>
         </div>
       </section>

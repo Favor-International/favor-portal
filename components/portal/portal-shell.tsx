@@ -28,29 +28,26 @@ import {
   LogOut,
   User,
   Heart,
-  GraduationCap,
   Home,
-  FileText,
   Shield,
   Settings,
-  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NotificationPanel } from "./notification-panel";
 import { APP_CONFIG, getGivingTier } from "@/lib/constants";
 import { DevTools } from "./dev-tools";
 
+// Phase 1 is a payment-management portal. Courses/content/support and the
+// other modules are archived (their routes are private-foldered); nav shows
+// only the giving-focused surfaces.
 const BASE_NAV_ITEMS = [
   { name: "Home", href: "/dashboard", icon: Home },
   { name: "Giving", href: "/giving", icon: Heart },
-  { name: "Courses", href: "/courses", icon: GraduationCap },
-  { name: "Content", href: "/content", icon: FileText },
 ];
 
 const ACCOUNT_NAV_ITEMS = [
   { name: "Profile", href: "/profile", icon: User },
   { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Support", href: "/support", icon: LifeBuoy },
 ];
 
 interface PortalShellProps {
@@ -237,7 +234,7 @@ export function PortalShell({ children }: PortalShellProps) {
 
         <footer className="glass-subtle border-t-0">
           <div className="mx-auto flex w-full max-w-[1400px] flex-col items-center gap-2 px-4 py-6 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
-            <p className="text-xs text-[#8b957b]">{APP_CONFIG.name} &middot; 3433 Lithia Pinecrest Rd #356, Valrico, FL 33596</p>
+            <p className="text-xs text-[#8b957b]">{APP_CONFIG.name} &middot; 11268 Winthrop Main Street #102, Riverview, FL 33578</p>
             <p className="text-xs italic text-[#8b957b]/70">{APP_CONFIG.tagline}</p>
           </div>
         </footer>
