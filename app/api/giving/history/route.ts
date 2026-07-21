@@ -3,7 +3,8 @@ import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { listGivingHistory } from "@/lib/db/access/giving";
 import { getUserById, linkOwnConstituent, syncOwnGivingCache } from "@/lib/db/access/sky";
-import { fetchGivingHistoryByEmail, givingGatewayConfigured } from "@/lib/blackbaud/gateway";
+import { givingGatewayConfigured } from "@/lib/blackbaud/gateway";
+import { getGivingSnapshot } from "@/lib/giving/snapshot";
 import { logError } from "@/lib/logger";
 import type { BlackbaudGift, Gift } from "@/types";
 
@@ -48,7 +49,10 @@ export async function GET() {
     if (givingGatewayConfigured()) {
       const userRow = await getUserById(db, ctx.userId);
       if (userRow?.email) {
-        const live = await fetchGivingHistoryByEmail(userRow.email.toLowerCase());
+        // Cached per user; refetches only after a new login or past the TTL.
+        const live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
+          notBefore: userRow.lastLogin,
+        });
         if (live) {
           try {
             if (live.constituent && !userRow.blackbaudConstituentId) {

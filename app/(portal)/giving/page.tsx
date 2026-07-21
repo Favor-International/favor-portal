@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useGiving } from "@/hooks/use-giving";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Heart, Download, History, ArrowRight } from "lucide-react";
+import { Heart, Download, History, ArrowRight, RefreshCw } from "lucide-react";
 import { RecurringManager } from "@/components/giving/recurring-manager";
 import { GiveCta } from "@/components/giving/give-cta";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
@@ -25,6 +25,19 @@ export default function GivingPage() {
 function GivingPageContent() {
   const { user } = useAuth();
   const { gifts, totalGiven, ytdGiven, isLoading } = useGiving(user?.id);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refreshFromBlackbaud() {
+    setRefreshing(true);
+    try {
+      await fetch("/api/giving/refresh", { method: "POST" });
+      toast.success("Pulled your latest giving from Blackbaud");
+      window.location.reload();
+    } catch {
+      setRefreshing(false);
+      toast.error("Could not refresh right now");
+    }
+  }
 
   if (isLoading) {
     return <PortalPageSkeleton />;
@@ -67,16 +80,28 @@ function GivingPageContent() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <nav className="mb-2 flex items-center gap-1 text-xs text-[#999999]">
-          <Link href="/dashboard" className="hover:text-[#666666]">Home</Link>
-          <span>/</span>
-          <span className="font-medium text-[#1a1a1a]">Giving</span>
-        </nav>
-        <h1 className="font-serif text-3xl font-semibold text-[#1a1a1a]">Your giving</h1>
-        <p className="mt-1 text-sm text-[#6f7766]">
-          Manage your monthly partnership, give again, and download your records.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <nav className="mb-2 flex items-center gap-1 text-xs text-[#999999]">
+            <Link href="/dashboard" className="hover:text-[#666666]">Home</Link>
+            <span>/</span>
+            <span className="font-medium text-[#1a1a1a]">Giving</span>
+          </nav>
+          <h1 className="font-serif text-3xl font-semibold text-[#1a1a1a]">Your giving</h1>
+          <p className="mt-1 text-sm text-[#6f7766]">
+            Manage your monthly partnership, give again, and download your records.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refreshFromBlackbaud}
+          disabled={refreshing}
+          className="shrink-0 self-start"
+        >
+          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
       </div>
 
       {/* Monthly-first push */}

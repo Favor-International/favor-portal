@@ -3,6 +3,7 @@ import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { getUserById } from "@/lib/db/access/sky";
 import { manageRecurringGift, givingGatewayConfigured } from "@/lib/blackbaud/gateway";
+import { refreshGivingSnapshot } from "@/lib/giving/snapshot";
 import { logError, logInfo } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -41,6 +42,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const result = await manageRecurringGift(userRow.email.toLowerCase(), id, input);
+
+    // Refresh the cached snapshot so every surface reflects the change now.
+    try {
+      await refreshGivingSnapshot(ctx.userId, userRow.email.toLowerCase());
+    } catch (refreshError) {
+      logError({ event: "giving.recurring_live.refresh_failed", route: "/api/giving/recurring-live/[id]", error: refreshError });
+    }
+
     logInfo({
       event: "giving.recurring_live.updated",
       route: "/api/giving/recurring-live/[id]",

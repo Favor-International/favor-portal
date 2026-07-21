@@ -34,9 +34,9 @@ export function RecurringManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newAmount, setNewAmount] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (fresh = false) => {
     try {
-      const res = await fetch('/api/giving/recurring-live');
+      const res = await fetch(`/api/giving/recurring-live${fresh ? '?fresh=1' : ''}`);
       const data = (await res.json()) as { success?: boolean; configured?: boolean; schedules?: Schedule[] };
       setConfigured(data.configured !== false);
       setSchedules(data.schedules ?? []);
@@ -72,7 +72,7 @@ export function RecurringManager() {
         : `Monthly amount updated to ${formatCurrency(body.amount)}.`);
       setEditingId(null);
       setNewAmount('');
-      await load();
+      await load(true); // force a fresh pull so the change shows immediately
     } finally {
       setBusyId(null);
     }
