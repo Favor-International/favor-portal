@@ -25,9 +25,9 @@
     // favor-astro app: single owner of the Blackbaud SKY OAuth token.
     // PORTAL_GIVING_API_KEY is a Worker secret (wrangler secret put), never a var.
     "GIVING_API_BASE": "https://favor-astro.pages.dev",
-    // Sender for portal email (magic links, welcome). Until favorintl.org is
-    // verified in Resend, this must be an address on a verified domain;
-    // onboarding@resend.dev delivers only to the Resend account owner.
-    "RESEND_FROM": "Favor International <onboarding@resend.dev>"
+    // Sender for portal email (magic links, welcome). mail.favorportal.com is
+    // verified in Resend (temporary sending domain until favorintl.org DNS is
+    // reachable); swap to noreply@favorintl.org once that domain verifies.
+    "RESEND_FROM": "Favor International <noreply@mail.favorportal.com>"
   }
 }
