@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { getUserById } from "@/lib/db/access/sky";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { givingGatewayConfigured } from "@/lib/blackbaud/gateway";
 import { getGivingSnapshot } from "@/lib/giving/snapshot";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -26,7 +28,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, configured: true, schedules: [] });
     }
 
-    const force = new URL(request.url).searchParams.get("fresh") === "1";
+    // A forced refetch shares the per-user Blackbaud budget with /refresh; if
+    // the budget is spent, fall back to the cached snapshot instead of erroring.
+    let force = new URL(request.url).searchParams.get("fresh") === "1";
+    if (force) {
+      const { env } = getCloudflareContext();
+      const rl = await checkRateLimit(env.RATE_LIMIT, `giving:force:${ctx.userId}`, 12, 5 * 60 * 1000);
+      if (!rl.allowed) force = false;
+    }
     const live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
       notBefore: userRow.lastLogin,
       force,

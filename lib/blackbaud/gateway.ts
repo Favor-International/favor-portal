@@ -29,6 +29,8 @@ export interface GatewayGift {
   designation: string | null;
   payment_method: string | null;
   receipted: boolean;
+  receipt_number?: number | null;
+  receipt_date?: string | null;
   anonymous: boolean;
 }
 
@@ -40,6 +42,12 @@ export interface GatewayHistory {
     ytd_given?: number;
     gift_count: number;
     active_recurring?: number;
+    // Authoritative constituent giving summary (read-only enrichment).
+    lifetime_total?: number | null;
+    consecutive_years_given?: number | null;
+    total_years_given?: number | null;
+    first_gift_date?: string | null;
+    first_gift_amount?: number | null;
   };
 }
 

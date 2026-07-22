@@ -3,7 +3,13 @@ import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
-initOpenNextCloudflareForDev();
+// Only needed to expose getCloudflareContext() during `next dev`. Starting the
+// miniflare/workerd proxy during a production `next build` is unnecessary (our
+// code only reads the CF context at request time) and has proven flaky on
+// Windows workerd, so scope it to development.
+if (process.env.NODE_ENV === "development") {
+  initOpenNextCloudflareForDev();
+}
 
 const appDir = dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +35,30 @@ const nextConfig: NextConfig = {
         hostname: "**.cloudflarestream.com",
       },
     ],
+  },
+  // Security headers on every response (defense-in-depth for an account /
+  // giving app). CSP here is intentionally conservative — it hardens framing,
+  // base-uri and plugins without an inline script-src that would break Next.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" },
+          { key: "X-DNS-Prefetch-Control", value: "off" },
+        ],
+      },
+      {
+        // API responses must never be cached by shared caches (auth-sensitive).
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+    ];
   },
   // Phase-1 archived surfaces: routes are private-foldered (non-routable).
   // Redirect any stale bookmark to the live giving surfaces instead of 404.

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { getUserById } from "@/lib/db/access/sky";
 import { manageRecurringGift, givingGatewayConfigured } from "@/lib/blackbaud/gateway";
 import { refreshGivingSnapshot } from "@/lib/giving/snapshot";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { logError, logInfo } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -18,6 +20,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if ("error" in auth) return auth.error;
     const { ctx } = auth;
     const { id } = await params;
+
+    // Guard against write-spam against Blackbaud.
+    const { env } = getCloudflareContext();
+    const rl = await checkRateLimit(env.RATE_LIMIT, `giving:mutate:${ctx.userId}`, 20, 5 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many changes at once. Please wait a moment." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
 
     if (!givingGatewayConfigured()) {
       return NextResponse.json({ error: "Giving management is not configured" }, { status: 503 });

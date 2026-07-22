@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Gift, RecurringGift } from '@/types';
+import { Gift, RecurringGift, GivingSummary } from '@/types';
 
 interface UseGivingReturn {
   gifts: Gift[];
@@ -10,12 +10,14 @@ interface UseGivingReturn {
   error: Error | null;
   totalGiven: number;
   ytdGiven: number;
+  summary: GivingSummary | null;
   refresh: () => void;
 }
 
 export function useGiving(userId: string | undefined, refreshKey?: number): UseGivingReturn {
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [recurringGifts, setRecurringGifts] = useState<RecurringGift[]>([]);
+  const [summary, setSummary] = useState<GivingSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -53,6 +55,7 @@ export function useGiving(userId: string | undefined, refreshKey?: number): UseG
 
         setGifts(loadedGifts);
         setRecurringGifts([]);
+        setSummary((historyData.summary ?? null) as GivingSummary | null);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err : new Error('Unknown error'));
@@ -68,12 +71,15 @@ export function useGiving(userId: string | undefined, refreshKey?: number): UseG
     };
   }, [userId, refreshKey, refreshToken]);
 
-  const totalGiven = gifts.reduce((sum, g) => sum + g.amount, 0);
-
   const currentYear = new Date().getFullYear();
-  const ytdGiven = gifts
+  const computedTotal = gifts.reduce((sum, g) => sum + g.amount, 0);
+  const computedYtd = gifts
     .filter(g => new Date(g.date).getFullYear() === currentYear)
     .reduce((sum, g) => sum + g.amount, 0);
 
-  return { gifts, recurringGifts, isLoading, error, totalGiven, ytdGiven, refresh };
+  // Prefer Blackbaud's authoritative lifetime/YTD when present.
+  const totalGiven = summary?.lifetimeTotal ?? summary?.totalGiven ?? computedTotal;
+  const ytdGiven = summary?.ytdGiven ?? computedYtd;
+
+  return { gifts, recurringGifts, isLoading, error, totalGiven, ytdGiven, summary, refresh };
 }

@@ -23,7 +23,7 @@ import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
 export default function ProfilePage() {
   const { user, isLoading, refreshUser } = useAuth();
-  const { totalGiven, ytdGiven, gifts } = useGiving(user?.id);
+  const { totalGiven, ytdGiven, gifts, summary } = useGiving(user?.id);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -83,7 +83,13 @@ export default function ProfilePage() {
   const initials = user ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase() : "??";
   const lifetime = Math.max(user?.lifetimeGivingTotal ?? 0, totalGiven);
   const tier = getGivingTier(lifetime);
-  const memberSince = user?.createdAt ? new Date(user.createdAt).getFullYear() : null;
+  // Authoritative "partner since" is the year of the donor's first Blackbaud
+  // gift; fall back to the portal signup year only if that is unavailable.
+  const memberSince = summary?.firstGiftDate
+    ? new Date(summary.firstGiftDate).getFullYear()
+    : user?.createdAt
+      ? new Date(user.createdAt).getFullYear()
+      : null;
   const cityState = [val("city"), val("state")].filter(Boolean).join(", ");
   const addressLine = [val("street"), cityState, val("zip")].filter(Boolean).join(" · ");
 

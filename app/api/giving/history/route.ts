@@ -3,7 +3,7 @@ import { authedRoute } from "@/lib/api/route-auth";
 import { getDb } from "@/lib/db/client";
 import { listGivingHistory } from "@/lib/db/access/giving";
 import { getUserById, linkOwnConstituent, syncOwnGivingCache } from "@/lib/db/access/sky";
-import { givingGatewayConfigured } from "@/lib/blackbaud/gateway";
+import { givingGatewayConfigured, type GatewayHistory } from "@/lib/blackbaud/gateway";
 import { getGivingSnapshot } from "@/lib/giving/snapshot";
 import { logError } from "@/lib/logger";
 import type { BlackbaudGift, Gift } from "@/types";
@@ -41,6 +41,8 @@ export async function GET() {
     const { ctx } = auth;
     const db = getDb();
 
+    let live: GatewayHistory | null = null;
+
     // Live-first: pull the caller's history straight from Raiser's Edge NXT
     // through the favor-astro giving gateway (the single owner of the SKY
     // OAuth token), refresh the local giving_cache, then serve from the
@@ -50,20 +52,21 @@ export async function GET() {
       const userRow = await getUserById(db, ctx.userId);
       if (userRow?.email) {
         // Cached per user; refetches only after a new login or past the TTL.
-        const live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
+        live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
           notBefore: userRow.lastLogin,
         });
         if (live) {
+          const snap = live; // const capture for use inside the map closure
           try {
-            if (live.constituent && !userRow.blackbaudConstituentId) {
-              await linkOwnConstituent(db, ctx, live.constituent.id);
+            if (snap.constituent && !userRow.blackbaudConstituentId) {
+              await linkOwnConstituent(db, ctx, snap.constituent.id);
             }
-            const moneyRows = live.gifts
+            const moneyRows = snap.gifts
               .filter((g) => !g.is_recurring) // schedules are not received money
               .map(
                 (g): BlackbaudGift & { receiptSent?: boolean } => ({
                   id: g.id,
-                  constituentId: live.constituent?.id ?? "",
+                  constituentId: snap.constituent?.id ?? "",
                   amount: g.amount,
                   date: g.date ?? new Date().toISOString(),
                   designation: g.designation ?? "Where Needed Most",
@@ -81,17 +84,44 @@ export async function GET() {
 
     const rows = await listGivingHistory(db, ctx);
 
-    const gifts = rows.map(mapGiftRow);
+    // Receipt details keyed by Blackbaud gift id (read-only enrichment from the
+    // live snapshot; falls back to no receipt info if the gateway was down).
+    const receiptByGiftId = new Map(
+      (live?.gifts ?? []).map((g) => [g.id, { receipted: g.receipted, number: g.receipt_number ?? null, date: g.receipt_date ?? null }])
+    );
+
+    const gifts = rows.map((row) => {
+      const g = mapGiftRow(row);
+      const r = row.blackbaudGiftId ? receiptByGiftId.get(row.blackbaudGiftId) : undefined;
+      return {
+        ...g,
+        receipted: r?.receipted ?? g.receiptSent,
+        receiptNumber: r?.number ?? null,
+        receiptDate: r?.date ?? null,
+      };
+    });
+
     const currentYear = new Date().getFullYear();
     const years = gifts.map((gift) => new Date(gift.date).getFullYear());
 
+    const computedTotal = gifts.reduce((sum, gift) => sum + gift.amount, 0);
+    const ytdGiven = gifts
+      .filter((gift) => new Date(gift.date).getFullYear() === currentYear)
+      .reduce((sum, gift) => sum + gift.amount, 0);
+
     const summary = {
-      totalGiven: gifts.reduce((sum, gift) => sum + gift.amount, 0),
-      ytdGiven: gifts
-        .filter((gift) => new Date(gift.date).getFullYear() === currentYear)
-        .reduce((sum, gift) => sum + gift.amount, 0),
+      // Authoritative lifetime (server-computed by Blackbaud, not capped by the
+      // 200-gift page) when available; otherwise the sum of loaded gifts.
+      totalGiven: live?.summary.lifetime_total ?? computedTotal,
+      loadedTotal: computedTotal,
+      ytdGiven,
       giftCount: gifts.length,
       yearsActive: years.length > 0 ? currentYear - Math.min(...years) + 1 : 1,
+      lifetimeTotal: live?.summary.lifetime_total ?? null,
+      consecutiveYearsGiven: live?.summary.consecutive_years_given ?? null,
+      totalYearsGiven: live?.summary.total_years_given ?? null,
+      firstGiftDate: live?.summary.first_gift_date ?? null,
+      firstGiftAmount: live?.summary.first_gift_amount ?? null,
     };
 
     return NextResponse.json({ success: true, gifts, summary });

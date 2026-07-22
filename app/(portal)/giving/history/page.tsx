@@ -80,19 +80,25 @@ export default function GivingHistoryPage() {
   }
 
   function downloadReceipt(gift: Gift) {
+    const receiptNo = gift.receiptNumber ?? gift.blackbaudGiftId ?? gift.id;
     const text = [
-      "FAVOR INTERNATIONAL - GIFT RECEIPT",
+      "FAVOR INTERNATIONAL - GIFT RECORD",
       "=".repeat(42),
       "",
-      `Receipt #: ${gift.id}`,
-      `Date: ${new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
-      `Donor: ${user?.firstName} ${user?.lastName}`,
-      `Amount: $${gift.amount.toLocaleString()}.00`,
+      `Receipt #: ${receiptNo}`,
+      `Gift date: ${new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
+      gift.receiptDate ? `Receipted: ${new Date(gift.receiptDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}` : "",
+      `Donor: ${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
+      `Amount: ${formatCurrency(gift.amount)}`,
       `Designation: ${gift.designation}`,
       `Type: ${gift.isRecurring ? "Recurring" : "One-time"}`,
       "",
-      "Favor International, Inc. - EIN: XX-XXXXXXX",
-      "501(c)(3) Non-Profit Organization",
+      "Favor International, Inc. - EIN: 47-5225697",
+      "11268 Winthrop Main Street #102, Riverview, FL 33578",
+      "501(c)(3) public charity",
+      "",
+      "Your official tax receipt is issued by Blackbaud, Favor's donation",
+      "processor, at the time of each gift.",
     ].join("\n");
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -217,9 +223,16 @@ export default function GivingHistoryPage() {
                         {gift.designation}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={gift.isRecurring ? "default" : "secondary"} className="text-[10px]">
-                          {gift.isRecurring ? "Recurring" : "One-time"}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge variant={gift.isRecurring ? "default" : "secondary"} className="text-[10px]">
+                            {gift.isRecurring ? "Recurring" : "One-time"}
+                          </Badge>
+                          {gift.receipted ? (
+                            <Badge className="border-0 bg-[#2b4d24]/10 text-[10px] text-[#2b4d24]" title={gift.receiptNumber ? `Receipt #${gift.receiptNumber}` : "Receipted"}>
+                              Receipted
+                            </Badge>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -254,7 +267,7 @@ export default function GivingHistoryPage() {
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { label: "Organization", value: "Favor International, Inc." },
-              { label: "Tax ID (EIN)", value: "XX-XXXXXXX" },
+              { label: "Tax ID (EIN)", value: "47-5225697" },
               { label: "Classification", value: "501(c)(3) Non-Profit" },
               { label: "Deductibility", value: "Fully tax-deductible" },
             ].map((item) => (
