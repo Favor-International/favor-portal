@@ -32,6 +32,18 @@ export function getGivingTier(lifetimeGiving: number) {
   return GIVING_TIERS.BASIC;
 }
 
+// Single source of truth for the org's legal/tax details. Verified against
+// favorintl.org (EIN, address, phone) — used on receipts, statements, footers.
+export const ORG = {
+  legalName: 'Favor International, Inc.',
+  ein: '47-5225697',
+  address: '11268 Winthrop Main Street #102, Riverview, FL 33578',
+  phone: '941-444-9940',
+  email: 'info@favorintl.org',
+  website: 'favorintl.org',
+  classification: '501(c)(3) public charity',
+} as const;
+
 export const APP_CONFIG = {
   name: 'Favor International',
   tagline: 'Transformed Hearts Transform Nations',

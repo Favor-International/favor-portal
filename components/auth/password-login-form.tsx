@@ -90,7 +90,8 @@ export function PasswordLoginForm() {
         {isLoading ? 'Signing in…' : 'Sign in'}
       </Button>
       <p className="text-center text-xs text-[#6f7766]">
-        No password yet? Sign in with the email link above, then set one in Settings.
+        Forgot or don&rsquo;t have a password? Use the email sign-in link above to get in, then
+        set a new one in Settings &rsaquo; Sign-in &amp; Security.
       </p>
     </form>
   );

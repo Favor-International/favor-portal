@@ -4,6 +4,8 @@ import { getDb } from '@/lib/db/client';
 import { getOwnedGift, getUserById } from '@/lib/db/access/sky';
 import type { ConstituentType, Gift, User } from '@/types';
 import { logError } from '@/lib/logger';
+import { ORG } from '@/lib/constants';
+import { formatDate } from '@/lib/utils';
 
 export const runtime = 'nodejs';
 
@@ -139,16 +141,17 @@ export async function GET(
 }
 
 function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): string {
-  const formattedDate = new Date(gift.date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const formattedDate = formatDate(gift.date);
 
-  const donorName = donor ? `${donor.firstName} ${donor.lastName}` : 'Valued Donor';
-  const donorAddress = donor?.address ?
-    `${donor.address.street}, ${donor.address.city}, ${donor.address.state} ${donor.address.zip}` :
-    'Address on file';
+  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
+  const donorName = esc(donor ? `${donor.firstName} ${donor.lastName}` : 'Valued Donor');
+  const donorAddress = esc(
+    donor?.address
+      ? `${donor.address.street}, ${donor.address.city}, ${donor.address.state} ${donor.address.zip}`
+      : 'Address on file'
+  );
+  const donorEmail = esc(donor?.email || '');
+  const designation = esc(gift.designation);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -324,7 +327,7 @@ function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): str
       <p class="section-title">Donor Information</p>
       <p class="donor-name">${donorName}</p>
       <p class="donor-address">${donorAddress}</p>
-      <p class="donor-address">${donor?.email || ''}</p>
+      <p class="donor-address">${donorEmail}</p>
     </div>
 
     <div class="amount-box">
@@ -339,37 +342,32 @@ function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): str
       </div>
       <div class="detail-item">
         <p class="detail-label">Designation</p>
-        <p class="detail-value">${gift.designation}</p>
+        <p class="detail-value">${designation}</p>
       </div>
       <div class="detail-item">
         <p class="detail-label">Gift Type</p>
         <p class="detail-value">${gift.isRecurring ? 'Recurring' : 'One-time'}</p>
-      </div>
-      <div class="detail-item">
-        <p class="detail-label">Payment Method</p>
-        <p class="detail-value">Credit Card</p>
       </div>
     </div>
 
     <div class="tax-info">
       <p class="tax-title">Tax-Deductible Contribution</p>
       <p class="tax-text">
-        Favor International, Inc. is a 501(c)(3) nonprofit organization.
+        ${ORG.legalName} is a ${ORG.classification} (EIN ${ORG.ein}).
         No goods or services were provided in exchange for this contribution.
         Your donation is tax-deductible to the fullest extent allowed by law.
-        Our EIN is XX-XXXXXXX.
       </p>
       <p class="tax-text" style="margin-top: 15px;">
         <strong>Please retain this receipt for your tax records.</strong>
-        Annual tax receipts are mailed by January 31st for the previous calendar year.
+        Your official year-end tax statement is available in your giving portal.
       </p>
     </div>
 
     <div class="footer">
-      <p><strong>Favor International, Inc.</strong></p>
-      <p>3433 Lithia Pinecrest Rd #356, Valrico, FL 33596</p>
-      <p>Email: giving@favorinternational.org | Phone: (555) 123-4567</p>
-      <p>EIN: XX-XXXXXXX | www.favorinternational.org</p>
+      <p><strong>${ORG.legalName}</strong></p>
+      <p>${ORG.address}</p>
+      <p>Email: ${ORG.email} &middot; Phone: ${ORG.phone}</p>
+      <p>EIN: ${ORG.ein} &middot; ${ORG.website}</p>
       <p style="margin-top: 15px; font-style: italic;">
         Thank you for your generous support of our mission!
       </p>

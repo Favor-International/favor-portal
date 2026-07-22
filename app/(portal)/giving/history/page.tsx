@@ -125,10 +125,22 @@ export default function GivingHistoryPage() {
             View and download your complete giving history for tax purposes.
           </p>
         </div>
-        <Button variant="outline" onClick={exportCSV}>
-          <Download className="mr-2 h-4 w-4" />
-          Export CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <a
+              href={`/api/giving/statement/${yearFilter !== "all" ? yearFilter : years[0] ?? new Date().getFullYear()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              {yearFilter !== "all" ? `${yearFilter} tax statement` : "Year-end tax statement"}
+            </a>
+          </Button>
+          <Button variant="outline" onClick={exportCSV}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* Year summary cards */}
