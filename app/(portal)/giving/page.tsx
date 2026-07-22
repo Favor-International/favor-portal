@@ -11,7 +11,7 @@ import { Heart, Download, History, ArrowRight, RefreshCw } from "lucide-react";
 import { RecurringManager } from "@/components/giving/recurring-manager";
 import { GiveCta } from "@/components/giving/give-cta";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDateShort, giftYear } from "@/lib/utils";
 import { toast } from "sonner";
 
 export default function GivingPage() {
@@ -48,7 +48,7 @@ function GivingPageContent() {
 
   function downloadGivingSummary() {
     const year = new Date().getFullYear();
-    const yearGifts = gifts.filter((g) => new Date(g.date).getFullYear() === year);
+    const yearGifts = gifts.filter((g) => giftYear(g.date) === year);
     const text = [
       `FAVOR INTERNATIONAL — ${year} GIVING SUMMARY`,
       "=".repeat(48),
@@ -136,7 +136,7 @@ function GivingPageContent() {
                 <div>
                   <p className="text-2xl font-semibold text-[#1a1a1a]">{formatCurrency(mostRecent.amount)}</p>
                   <p className="text-sm text-[#6f7766]">
-                    {mostRecent.designation} · {new Date(mostRecent.date).toLocaleDateString()}
+                    {mostRecent.designation} · {formatDateShort(mostRecent.date)}
                   </p>
                 </div>
                 <Badge variant={mostRecent.isRecurring ? "default" : "secondary"}>

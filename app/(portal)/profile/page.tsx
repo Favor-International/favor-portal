@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, giftYear } from "@/lib/utils";
 import { getGivingTier } from "@/lib/constants";
 import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
@@ -86,9 +86,9 @@ export default function ProfilePage() {
   // Authoritative "partner since" is the year of the donor's first Blackbaud
   // gift; fall back to the portal signup year only if that is unavailable.
   const memberSince = summary?.firstGiftDate
-    ? new Date(summary.firstGiftDate).getFullYear()
+    ? giftYear(summary.firstGiftDate)
     : user?.createdAt
-      ? new Date(user.createdAt).getFullYear()
+      ? giftYear(user.createdAt)
       : null;
   const cityState = [val("city"), val("state")].filter(Boolean).join(", ");
   const addressLine = [val("street"), cityState, val("zip")].filter(Boolean).join(" · ");

@@ -25,7 +25,7 @@ import { Download, Calendar, FileText } from "lucide-react";
 import { EmptyState } from "@/components/portal/empty-state";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 import { PageBreadcrumb, PageBackButton } from "@/components/giving/page-navigation";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateShort, giftYear } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Gift } from "@/types";
 
@@ -42,12 +42,12 @@ export default function GivingHistoryPage() {
   const allGifts = gifts;
 
   // Available years
-  const years = [...new Set(allGifts.map((g) => new Date(g.date).getFullYear()))].sort((a, b) => b - a);
+  const years = [...new Set(allGifts.map((g) => giftYear(g.date)).filter((y): y is number => y !== null))].sort((a, b) => b - a);
 
   // Filter
   let filtered = allGifts;
   if (yearFilter !== "all") {
-    filtered = filtered.filter((g) => new Date(g.date).getFullYear() === Number(yearFilter));
+    filtered = filtered.filter((g) => giftYear(g.date) === Number(yearFilter));
   }
   if (typeFilter !== "all") {
     filtered = filtered.filter((g) =>
@@ -57,7 +57,7 @@ export default function GivingHistoryPage() {
 
   // Year summaries
   const yearSummaries = years.slice(0, 4).map((year) => {
-    const yg = allGifts.filter((g) => new Date(g.date).getFullYear() === year);
+    const yg = allGifts.filter((g) => giftYear(g.date) === year);
     return { year, total: yg.reduce((s, g) => s + g.amount, 0), count: yg.length };
   });
 
@@ -66,7 +66,7 @@ export default function GivingHistoryPage() {
       "Date,Amount,Designation,Type,Receipt",
       ...filtered.map(
         (g) =>
-          `${new Date(g.date).toLocaleDateString()},${g.amount},${g.designation},${g.isRecurring ? "Recurring" : "One-time"},${g.receiptSent ? "Sent" : "Pending"}`
+          `${formatDateShort(g.date)},${g.amount},${g.designation},${g.isRecurring ? "Recurring" : "One-time"},${g.receiptSent ? "Sent" : "Pending"}`
       ),
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
@@ -86,8 +86,8 @@ export default function GivingHistoryPage() {
       "=".repeat(42),
       "",
       `Receipt #: ${receiptNo}`,
-      `Gift date: ${new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
-      gift.receiptDate ? `Receipted: ${new Date(gift.receiptDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}` : "",
+      `Gift date: ${formatDate(gift.date)}`,
+      gift.receiptDate ? `Receipted: ${formatDate(gift.receiptDate)}` : "",
       `Donor: ${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
       `Amount: ${formatCurrency(gift.amount)}`,
       `Designation: ${gift.designation}`,
@@ -214,7 +214,7 @@ export default function GivingHistoryPage() {
                   {filtered.map((gift) => (
                     <TableRow key={gift.id}>
                       <TableCell className="text-sm text-[#666666]">
-                        {new Date(gift.date).toLocaleDateString()}
+                        {formatDateShort(gift.date)}
                       </TableCell>
                       <TableCell className="font-medium text-[#1a1a1a]">
                         ${gift.amount.toLocaleString()}
