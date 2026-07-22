@@ -20,7 +20,9 @@
     { "binding": "R2", "bucket_name": "favor-portal-assets" }
   ],
   "vars": {
-    "DEMO_MODE": "true",
+    // Production front door: real donors reach /login from the site, so the
+    // demo personas are off (flip to "true" to show the interactive demo).
+    "DEMO_MODE": "false",
     "NEXT_PUBLIC_APP_URL": "https://favor-portal.marketing-6e9.workers.dev",
     // favor-astro app: single owner of the Blackbaud SKY OAuth token.
     // PORTAL_GIVING_API_KEY is a Worker secret (wrangler secret put), never a var.
