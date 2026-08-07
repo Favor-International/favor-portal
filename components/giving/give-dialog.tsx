@@ -64,7 +64,9 @@ export function GiveDialog({ defaultFrequency = 'monthly', trigger, onDone }: Gi
     getGiveConfig()
       .then((c) => {
         setConfig(c);
-        setFundId((prev) => prev || c.designations[0]?.fund_id || '');
+        const preferred =
+          c.designations.find((d) => /where needed most/i.test(d.label)) ?? c.designations[0];
+        setFundId((prev) => prev || preferred?.fund_id || '');
       })
       .catch(() => toast.error('Giving is briefly unavailable. Please try again shortly.'));
   }, [open]);
