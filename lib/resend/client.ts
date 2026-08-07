@@ -7,6 +7,9 @@ export interface EmailOptions {
   to: string | string[];
   subject: string;
   from?: string;
+  // Where a human reply lands. sendEmail rebuilds the Resend payload field by
+  // field, so anything not forwarded below is dropped on the floor.
+  replyTo?: string | string[];
 }
 
 export type SendEmailOptions =
@@ -40,6 +43,7 @@ export async function sendEmail(options: SendEmailOptions) {
           from,
           to: options.to,
           subject: options.subject,
+          ...(options.replyTo ? { replyTo: options.replyTo } : {}),
           html: options.html,
           text: options.text,
         })

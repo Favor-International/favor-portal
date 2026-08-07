@@ -35,6 +35,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(GENERIC_FAIL, { status: 401 });
     }
 
+    // Second bucket keyed on the account itself. IP-only throttling lets a
+    // distributed attacker spray a single donor address indefinitely.
+    const perAccount = await checkRateLimit(env.RATE_LIMIT, `auth:password:acct:${email}`, 10, 15 * 60 * 1000);
+    if (!perAccount.allowed) {
+      return NextResponse.json(
+        { error: "Too many attempts. Please try again shortly." },
+        { status: 429, headers: { "Retry-After": String(perAccount.retryAfterSeconds) } },
+      );
+    }
+
     const db = getDb();
     const user = await db.select().from(users).where(eq(users.email, email)).get();
     const ok = await verifyPassword(password, user?.passwordHash);

@@ -17,10 +17,10 @@ import {
 import { SetPasswordCard } from "@/components/auth/set-password-card";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
+import { ContactSupportButton } from "@/components/portal/contact-support-button";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
-type SectionId = "communications" | "reports" | "security" | "privacy";
+type SectionId = "communications" | "security" | "privacy";
 
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "communications", label: "Communications & Stories", icon: Mail },
@@ -52,15 +52,21 @@ export default function SettingsPage() {
   const { preferences, isLoading, updatePreferences } = usePreferences(user?.id);
   const [section, setSection] = useState<SectionId>("communications");
 
+  // A password-reset email lands here with ?section=security so the partner
+  // does not have to hunt for the form.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    if (requested === "security" || requested === "privacy" || requested === "communications") {
+      setSection(requested);
+    }
+  }, []);
+
   const [emailNewsletter, setEmailNewsletter] = useState(true);
   const [emailEvents, setEmailEvents] = useState(true);
   const [emailGiving, setEmailGiving] = useState(true);
-  const [emailReports, setEmailReports] = useState(true);
   const [smsEnabled, setSmsEnabled] = useState(false);
   const [smsGiftConfirmations, setSmsGiftConfirmations] = useState(false);
   const [mailEnabled, setMailEnabled] = useState(true);
-  const [mailAnnualReport, setMailAnnualReport] = useState(true);
-  const [reportPeriod, setReportPeriod] = useState("quarterly");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -69,12 +75,9 @@ export default function SettingsPage() {
     setEmailNewsletter(preferences.emailNewsletterMonthly);
     setEmailEvents(preferences.emailEvents);
     setEmailGiving(preferences.emailGivingConfirmations);
-    setEmailReports(preferences.emailQuarterlyReport || preferences.emailAnnualReport);
     setSmsEnabled(preferences.smsEnabled);
     setSmsGiftConfirmations(preferences.smsGiftConfirmations);
     setMailEnabled(preferences.mailEnabled);
-    setMailAnnualReport(preferences.mailAnnualReport);
-    setReportPeriod(preferences.reportPeriod);
   }, [preferences]);
 
   async function handleSave() {
@@ -84,13 +87,9 @@ export default function SettingsPage() {
         emailNewsletterMonthly: emailNewsletter,
         emailEvents,
         emailGivingConfirmations: emailGiving,
-        emailQuarterlyReport: emailReports,
-        emailAnnualReport: emailReports,
         smsEnabled,
         smsGiftConfirmations,
         mailEnabled,
-        mailAnnualReport,
-        reportPeriod: reportPeriod === "annual" ? "annual" : "quarterly",
       });
       setSaving(false);
       setSaved(true);
@@ -153,7 +152,13 @@ export default function SettingsPage() {
                     <ToggleRow id="newsletter" icon={Newspaper} label="Monthly newsletter" desc="Updates and stories from the field." checked={emailNewsletter} onChange={setEmailNewsletter} />
                     <ToggleRow id="events" icon={CalendarDays} label="Event invitations" desc="Upcoming events and webinars." checked={emailEvents} onChange={setEmailEvents} />
                     <ToggleRow id="giving" icon={ReceiptText} label="Giving confirmations" desc="Receipts when your gift is processed." checked={emailGiving} onChange={setEmailGiving} />
-                    <ToggleRow id="reports" icon={FileBarChart} label="Impact reports" desc="Quarterly and annual impact reports." checked={emailReports} onChange={setEmailReports} />
+                  </div>
+                  <p className="mt-3 text-xs text-[#8b957b]">
+                    Switching every email option off records a do-not-email flag on your
+                    record in Favor&rsquo;s donor database. Individual choices above are kept
+                    in your portal account.
+                  </p>
+                  <div className="hidden">
                   </div>
                 </CardContent>
               </Card>
@@ -181,9 +186,12 @@ export default function SettingsPage() {
                   </div>
                   <div className="mt-2 divide-y divide-[#e5e0d6]">
                     <ToggleRow id="mail-enabled" icon={Package} label="Direct mail" desc="Receive printed materials." checked={mailEnabled} onChange={setMailEnabled} />
-                    {mailEnabled && (
-                      <ToggleRow id="mail-annual" icon={FileBarChart} label="Printed annual report" desc="The full-year impact report by mail." checked={mailAnnualReport} onChange={setMailAnnualReport} />
-                    )}
+                  </div>
+                  <p className="mt-3 text-xs text-[#8b957b]">
+                    Turning this off records a do-not-mail flag on your record in
+                    Favor&rsquo;s donor database, so the mail house stops sending.
+                  </p>
+                  <div className="hidden">
                   </div>
                 </CardContent>
               </Card>
@@ -220,7 +228,7 @@ export default function SettingsPage() {
                       </a>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <a href="mailto:privacy@favorintl.org?subject=My%20portal%20data">
+                      <a href="mailto:admin@favorintl.org?subject=My%20portal%20data">
                         Request my data
                       </a>
                     </Button>
@@ -236,7 +244,7 @@ export default function SettingsPage() {
                   <p className="mt-2 mb-4 text-sm text-[#6f7766]">
                     Our partner support team is here for you.
                   </p>
-                  <ContactSupportDialog />
+                  <ContactSupportButton />
                 </CardContent>
               </Card>
             </>

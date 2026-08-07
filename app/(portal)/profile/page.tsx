@@ -18,7 +18,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { formatCurrency, giftYear } from "@/lib/utils";
 import { getGivingTier } from "@/lib/constants";
-import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
+import { ContactSupportButton } from "@/components/portal/contact-support-button";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
 export default function ProfilePage() {
@@ -346,7 +346,7 @@ export default function ProfilePage() {
                 <p className="font-semibold text-[#1a1a1a]">Need help?</p>
                 <p className="text-xs text-[#8b957b]">Reach our partner support team</p>
               </div>
-              <ContactSupportDialog trigger={<Button variant="outline" size="sm">Contact</Button>} />
+              <ContactSupportButton label="Contact" variant="outline" size="sm" />
             </CardContent>
           </Card>
         </div>

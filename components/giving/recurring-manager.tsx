@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
-import { giveUrl } from '@/lib/give-links';
+import { GiveDialog } from '@/components/giving/give-dialog';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/use-auth';
 import { vaultNewCard } from '@/lib/blackbaud-checkout';
@@ -26,8 +26,6 @@ interface Schedule {
   designation: string;
   date: string | null;
 }
-
-const GIVE_MONTHLY_URL = giveUrl('monthly');
 
 export function RecurringManager() {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
@@ -133,11 +131,18 @@ export function RecurringManager() {
               </p>
             </div>
           </div>
-          <Button asChild className="shrink-0 bg-[#e1a730] text-[#1a1a1a] hover:bg-[#d09a24]">
-            <Link href={GIVE_MONTHLY_URL} target="_blank" rel="noopener">
-              Start monthly giving
-            </Link>
-          </Button>
+          <GiveDialog
+            defaultFrequency="monthly"
+            onDone={() => void load(true)}
+            trigger={
+              <button
+                type="button"
+                className="inline-flex h-10 shrink-0 items-center rounded-md bg-[#e1a730] px-4 text-sm font-semibold text-[#1a1a1a] transition hover:bg-[#d09a24]"
+              >
+                Start monthly giving
+              </button>
+            }
+          />
         </CardContent>
       </Card>
     );

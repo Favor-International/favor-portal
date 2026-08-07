@@ -1,29 +1,42 @@
-import Link from "next/link";
-import { Heart, Repeat, ArrowUpRight } from "lucide-react";
-import { giveUrl } from "@/lib/give-links";
+'use client';
 
-// Real giving links (open the secure Blackbaud form on favorintl.org in a new
-// tab so the portal stays put). Monthly is always the lead action.
+// Giving happens inside the portal now.
+//
+// These used to be links that threw the partner out to favorintl.org in a new
+// tab. Will, 2026-08-06: "when I press Start Monthly Giving it still takes me
+// to the website to give, which doesn't make sense." They now open the give
+// dialog in place. The gift itself is still created by the public giving
+// endpoints, so there is exactly one implementation of taking money.
+
+import { Heart, Repeat } from 'lucide-react';
+import { GiveDialog } from '@/components/giving/give-dialog';
+
 export function GiveCta({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <a
-          href={giveUrl("monthly")}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#2b4d24] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#24401e]"
-        >
-          <Repeat className="h-4 w-4" aria-hidden="true" /> Give monthly
-        </a>
-        <a
-          href={giveUrl("once")}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[#e5e0d6] bg-white px-4 py-2.5 text-sm font-semibold text-[#2b4d24] transition hover:border-[#e1a730]"
-        >
-          <Heart className="h-4 w-4" aria-hidden="true" /> Give once
-        </a>
+        <GiveDialog
+          defaultFrequency="monthly"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2b4d24] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#24401e]"
+            >
+              <Repeat className="h-4 w-4" aria-hidden="true" /> Give monthly
+            </button>
+          }
+        />
+        <GiveDialog
+          defaultFrequency="once"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#e5e0d6] bg-white px-4 py-2.5 text-sm font-semibold text-[#2b4d24] transition hover:border-[#e1a730]"
+            >
+              <Heart className="h-4 w-4" aria-hidden="true" /> Give once
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -39,38 +52,46 @@ export function GiveCta({ compact = false }: { compact?: boolean }) {
         the hardest places. Start, change, or cancel anytime.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <a
-          href={giveUrl("monthly")}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#e1a730] px-5 py-2.5 text-sm font-bold text-[#1a1a1a] transition hover:bg-[#d09a24]"
-        >
-          <Repeat className="h-4 w-4" aria-hidden="true" /> Start monthly giving
-          <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-        </a>
-        <a
-          href={giveUrl("once")}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white/90 underline-offset-4 hover:underline"
-        >
-          Or give a one-time gift
-        </a>
+        <GiveDialog
+          defaultFrequency="monthly"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#e1a730] px-5 py-2.5 text-sm font-bold text-[#1a1a1a] transition hover:bg-[#d09a24]"
+            >
+              <Repeat className="h-4 w-4" aria-hidden="true" /> Start monthly giving
+            </button>
+          }
+        />
+        <GiveDialog
+          defaultFrequency="once"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white/90 underline-offset-4 hover:underline"
+            >
+              Or give a one-time gift
+            </button>
+          }
+        />
       </div>
     </div>
   );
 }
 
-// Small inline monthly nudge for spots that just need a link.
+// Small inline monthly nudge for spots that just need a prompt.
 export function GiveMonthlyLink() {
   return (
-    <Link
-      href={giveUrl("monthly")}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 font-semibold text-[#2b4d24] hover:underline"
-    >
-      Become a monthly partner <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-    </Link>
+    <GiveDialog
+      defaultFrequency="monthly"
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 font-semibold text-[#2b4d24] hover:underline"
+        >
+          Become a monthly partner
+        </button>
+      }
+    />
   );
 }

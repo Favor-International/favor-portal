@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +15,32 @@ export function PasswordLoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
+  const [sendingReset, setSendingReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  // Reset = a sign-in link that drops the partner on the password form. Same
+  // proven magic-link path; the mailbox is the credential either way.
+  const sendReset = async () => {
+    if (!email || !email.includes("@")) {
+      toast.error("Enter your email first, then choose Forgot your password.");
+      return;
+    }
+    setSendingReset(true);
+    try {
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, redirectTo: "/settings?section=security" }),
+      });
+      if (!res.ok) throw new Error("Could not send the reset email.");
+      setResetSent(true);
+      toast.success("Check your email for a link to set a new password.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send the reset email.");
+    } finally {
+      setSendingReset(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,8 +60,10 @@ export function PasswordLoginForm() {
         toast.error(data.error ?? 'Invalid email or password');
         return;
       }
-      router.push(data.redirectTo ?? '/dashboard');
-      router.refresh();
+      // Full navigation, not router.push: AuthProvider reads /api/auth/me only
+      // on mount, so a soft nav lands on the dashboard with no user loaded.
+      window.location.assign(data.redirectTo ?? "/dashboard");
+      return;
     } catch {
       toast.error('Something went wrong. Please try again.');
     } finally {
@@ -89,10 +115,18 @@ export function PasswordLoginForm() {
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? 'Signing in…' : 'Sign in'}
       </Button>
-      <p className="text-center text-xs text-[#6f7766]">
-        Forgot or don&rsquo;t have a password? Use the email sign-in link above to get in, then
-        set a new one in Settings &rsaquo; Sign-in &amp; Security.
-      </p>
+      <button
+        type="button"
+        className="w-full text-center text-xs text-[#6f7766] underline-offset-4 hover:text-[#2b4d24] hover:underline disabled:opacity-60"
+        onClick={sendReset}
+        disabled={sendingReset}
+      >
+        {sendingReset
+          ? "Sending reset link…"
+          : resetSent
+            ? "Reset link sent. Check your email."
+            : "Forgot your password?"}
+      </button>
     </form>
   );
 }

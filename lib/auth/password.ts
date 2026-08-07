@@ -46,17 +46,32 @@ export async function hashPassword(password: string): Promise<string> {
   return `pbkdf2$${ITERATIONS}$${toB64(salt)}$${toB64(hash)}`;
 }
 
+// A hash of a value nobody can supply. Verifying against this costs the same
+// as verifying a real password, so an unknown account cannot be identified by
+// how fast it is rejected.
+const DUMMY_HASH = `pbkdf2${ITERATIONS}${toB64(new Uint8Array(16))}${toB64(new Uint8Array(32))}`;
+
 export async function verifyPassword(password: string, stored: string | null | undefined): Promise<boolean> {
-  if (!stored) return false;
-  const parts = stored.split("$");
-  if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
+  // Never return early for a missing or malformed hash: do the same work, then
+  // fail. Otherwise response time reveals which emails have accounts.
+  const usable = typeof stored === "string" && stored.startsWith("pbkdf2$") ? stored : DUMMY_HASH;
+  const real = usable === stored;
+  const parts = usable.split("$");
+  if (parts.length !== 4) return false;
   const iterations = Number(parts[1]);
   if (!Number.isFinite(iterations) || iterations < 10_000 || iterations > 10_000_000) return false;
-  const salt = fromB64(parts[2]);
-  const expected = fromB64(parts[3]);
+  let salt: Uint8Array;
+  let expected: Uint8Array;
+  try {
+    salt = fromB64(parts[2]);
+    expected = fromB64(parts[3]);
+  } catch {
+    // A corrupt row must fail the login, not 500 the request.
+    return false;
+  }
   const actual = await derive(password, salt, iterations);
   if (expected.length !== actual.length) return false;
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected[i] ^ actual[i];
-  return diff === 0;
+  return real && diff === 0;
 }

@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Heart, Calendar, Receipt, ArrowRight, UserCog, History } from "lucide-react";
 import { RecurringManager } from "@/components/giving/recurring-manager";
 import { FromTheField } from "@/components/giving/from-the-field";
-import { giveUrl } from "@/lib/give-links";
+import { GiveDialog } from "@/components/giving/give-dialog";
 import { DashboardSkeleton } from "@/components/portal/dashboard/dashboard-skeleton";
 import { formatCurrency } from "@/lib/utils";
 
@@ -28,13 +28,6 @@ export default function DashboardPage() {
   ];
 
   const quickActions = [
-    {
-      label: "Give a one-time gift",
-      desc: "A single secure gift to the field",
-      href: giveUrl("once"),
-      external: true,
-      icon: Heart,
-    },
     { label: "Giving history", desc: "Every gift and receipt", href: "/giving/history", external: false, icon: History },
     { label: "Update profile", desc: "Your details and preferences", href: "/profile", external: false, icon: UserCog },
   ];
@@ -75,6 +68,19 @@ export default function DashboardPage() {
           {/* Quick actions */}
           <Card>
             <CardContent className="grid gap-3 p-4 sm:grid-cols-3">
+              <GiveDialog
+                defaultFrequency="once"
+                trigger={
+                  <button
+                    type="button"
+                    className="group flex flex-col gap-1 rounded-xl border border-[#e5e0d6] p-4 text-left transition hover:border-[#e1a730] hover:bg-[#fffdf7]"
+                  >
+                    <Heart className="h-5 w-5 text-[#2b4d24]" />
+                    <span className="mt-1 text-sm font-semibold text-[#1a1a1a]">Give a one-time gift</span>
+                    <span className="text-xs text-[#6f7766]">A single secure gift to the field</span>
+                  </button>
+                }
+              />
               {quickActions.map((a) =>
                 a.external ? (
                   <a

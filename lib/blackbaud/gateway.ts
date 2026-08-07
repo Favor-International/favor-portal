@@ -156,3 +156,34 @@ export async function fetchGivingHistoryByEmail(email: string): Promise<GatewayH
     return null;
   }
 }
+
+/**
+ * Push channel-level consent into Raiser's Edge NXT.
+ *
+ * RE NXT stores consent on the contact records themselves (do_not_email on the
+ * email address, do_not_mail on the address, do_not_call on the phone). Those
+ * are the flags the mail house and email team read, so those are what the
+ * portal writes. Per-category choices have no RE NXT equivalent and stay here.
+ *
+ * Never throws: a preference save must succeed for the partner even when
+ * Blackbaud is unreachable. Returns what was applied, or null if it could not run.
+ */
+export async function pushContactPreferences(
+  email: string,
+  consent: { email_opt_out?: boolean; mail_opt_out?: boolean; phone_opt_out?: boolean }
+): Promise<Record<string, string> | null> {
+  const cfg = gatewayEnv();
+  if (!cfg) return null;
+  try {
+    const res = await fetch(`${cfg.base}/api/portal/preferences`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, ...consent }),
+      signal: AbortSignal.timeout(12000),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; applied?: Record<string, string> };
+    return res.ok && data.ok ? (data.applied ?? {}) : null;
+  } catch {
+    return null;
+  }
+}
