@@ -30,6 +30,6 @@
     // Sender for portal email (magic links, welcome). mail.favorportal.com is
     // verified in Resend (temporary sending domain until favorintl.org DNS is
     // reachable); swap to noreply@favorintl.org once that domain verifies.
-    "RESEND_FROM": "Favor International <noreply@mail.favorportal.com>"
+    "RESEND_FROM": "Favor International <noreply@mail.favorintl.org>"
   }
 }
