@@ -235,7 +235,7 @@ export default function ProfilePage() {
                     <a href="mailto:partners@favorintl.org"><Mail className="mr-1.5 h-3.5 w-3.5" />Email</a>
                   </Button>
                   <Button variant="outline" size="sm" className="flex-1" asChild>
-                    <a href="tel:+18005550100"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
+                    <a href="tel:+19414449940"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
                   </Button>
                 </div>
               </>
@@ -243,8 +243,16 @@ export default function ProfilePage() {
               <div className="mt-4 flex flex-1 flex-col items-start justify-center">
                 <UserRound className="h-8 w-8 text-[#c5ccc2]" />
                 <p className="mt-2 text-sm text-[#6f7766]">
-                  A dedicated partner contact will be assigned to you soon.
+                  Our Partner Care team is here for anything you need.
                 </p>
+                <div className="mt-4 flex w-full gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <a href="mailto:partners@favorintl.org"><Mail className="mr-1.5 h-3.5 w-3.5" />Email</a>
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <a href="tel:+19414449940"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

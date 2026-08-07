@@ -39,10 +39,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "No email on account" }, { status: 400 });
     }
 
-    const body = (await request.json()) as { action?: string; amount?: unknown };
-    let input: { action: "pause" | "resume" | "cancel" } | { amount: number };
+    const body = (await request.json()) as { action?: string; amount?: unknown; card_token?: unknown };
+    let input:
+      | { action: "pause" | "resume" | "cancel" }
+      | { action: "update_card"; card_token: string }
+      | { amount: number };
     if (body.action === "pause" || body.action === "resume" || body.action === "cancel") {
       input = { action: body.action };
+    } else if (body.action === "update_card") {
+      // Blackbaud Checkout already vaulted the new card in the browser; all
+      // that crosses this boundary is the token, never card data.
+      const token = typeof body.card_token === "string" ? body.card_token.trim() : "";
+      if (!/^[0-9a-f-]{36}$/i.test(token)) {
+        return NextResponse.json({ error: "Card was not saved. Please try again." }, { status: 400 });
+      }
+      input = { action: "update_card", card_token: token };
     } else if (typeof body.amount === "number" && Number.isFinite(body.amount)) {
       const amount = Math.round(body.amount * 100) / 100;
       if (amount < 1 || amount > 250000) {

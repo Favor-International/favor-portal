@@ -5,6 +5,7 @@ import { getOwnedGift, getUserById } from '@/lib/db/access/sky';
 import type { ConstituentType, Gift, User } from '@/types';
 import { logError } from '@/lib/logger';
 import { ORG } from '@/lib/constants';
+import { renderGiftReceipt } from '@/lib/receipts/render';
 import { formatDate } from '@/lib/utils';
 
 export const runtime = 'nodejs';
@@ -107,25 +108,18 @@ export async function GET(
       }, { status: 200 });
     }
 
-    const html = generateReceiptHTML(
+    const html = renderGiftReceipt(
       {
-        id: gift.id,
-        userId: gift.userId,
+        id: gift.blackbaudGiftId || gift.id,
         amount: gift.amount,
         date: gift.giftDate,
         designation: gift.designation,
         isRecurring: Boolean(gift.isRecurring),
-        receiptSent: Boolean(gift.receiptSent),
-        blackbaudGiftId: gift.blackbaudGiftId || undefined,
       },
-      user ? {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        constituentType: normalizeConstituentType(user.constituentType),
-        lifetimeGivingTotal: user.lifetimeGivingTotal ?? 0,
-      } : null
+      {
+        name: user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "Valued partner",
+        email: user?.email ?? null,
+      }
     );
 
     return new NextResponse(html, {
@@ -138,241 +132,4 @@ export async function GET(
     logError({ event: 'giving.receipt.fetch_failed', route: '/api/giving/receipt/[id]', error });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
-
-function generateReceiptHTML(gift: ReceiptGift, donor: ReceiptDonor | null): string {
-  const formattedDate = formatDate(gift.date);
-
-  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
-  const donorName = esc(donor ? `${donor.firstName} ${donor.lastName}` : 'Valued Donor');
-  const donorAddress = esc(
-    donor?.address
-      ? `${donor.address.street}, ${donor.address.city}, ${donor.address.state} ${donor.address.zip}`
-      : 'Address on file'
-  );
-  const donorEmail = esc(donor?.email || '');
-  const designation = esc(gift.designation);
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Donation Receipt - Favor International</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: Georgia, 'Times New Roman', serif;
-      line-height: 1.6;
-      color: #1a1a1a;
-      background: #f5f5f0;
-      padding: 40px;
-    }
-    .receipt {
-      max-width: 800px;
-      margin: 0 auto;
-      background: white;
-      padding: 60px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      border-radius: 8px;
-    }
-    .header {
-      text-align: center;
-      border-bottom: 3px solid #2b4d24;
-      padding-bottom: 30px;
-      margin-bottom: 40px;
-    }
-    .logo {
-      font-size: 32px;
-      font-weight: bold;
-      color: #2b4d24;
-      margin-bottom: 10px;
-      letter-spacing: 2px;
-    }
-    .tagline {
-      font-style: italic;
-      color: #666;
-      font-size: 14px;
-    }
-    .receipt-title {
-      font-size: 28px;
-      color: #2b4d24;
-      margin: 30px 0 10px;
-      text-align: center;
-    }
-    .receipt-number {
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-      margin-bottom: 40px;
-    }
-    .section {
-      margin-bottom: 30px;
-    }
-    .section-title {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #999;
-      margin-bottom: 10px;
-      font-weight: normal;
-    }
-    .donor-name {
-      font-size: 20px;
-      font-weight: bold;
-      color: #1a1a1a;
-      margin-bottom: 5px;
-    }
-    .donor-address {
-      color: #666;
-      font-size: 14px;
-    }
-    .amount-box {
-      background: linear-gradient(135deg, #2b4d24 0%, #3d6633 100%);
-      color: white;
-      padding: 30px;
-      border-radius: 8px;
-      text-align: center;
-      margin: 30px 0;
-    }
-    .amount-label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      opacity: 0.8;
-      margin-bottom: 10px;
-    }
-    .amount-value {
-      font-size: 48px;
-      font-weight: bold;
-    }
-    .gift-details {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin: 30px 0;
-    }
-    .detail-item {
-      padding: 15px;
-      background: #f9f9f7;
-      border-radius: 6px;
-    }
-    .detail-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #999;
-      margin-bottom: 5px;
-    }
-    .detail-value {
-      font-size: 16px;
-      font-weight: 500;
-      color: #1a1a1a;
-    }
-    .tax-info {
-      background: #f9f9f7;
-      padding: 25px;
-      border-radius: 8px;
-      margin-top: 40px;
-      border-left: 4px solid #2b4d24;
-    }
-    .tax-title {
-      font-weight: bold;
-      color: #2b4d24;
-      margin-bottom: 10px;
-    }
-    .tax-text {
-      font-size: 13px;
-      color: #666;
-      line-height: 1.8;
-    }
-    .footer {
-      margin-top: 50px;
-      padding-top: 30px;
-      border-top: 1px solid #e5e5e0;
-      text-align: center;
-      font-size: 12px;
-      color: #999;
-    }
-    .footer p {
-      margin-bottom: 5px;
-    }
-    @media print {
-      body {
-        background: white;
-        padding: 0;
-      }
-      .receipt {
-        box-shadow: none;
-        padding: 40px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="receipt">
-    <div class="header">
-      <div class="logo">FAVOR INTERNATIONAL</div>
-      <div class="tagline">Transformed Hearts Transform Nations</div>
-    </div>
-
-    <h1 class="receipt-title">Official Donation Receipt</h1>
-    <p class="receipt-number">Receipt #: ${gift.id}</p>
-
-    <div class="section">
-      <p class="section-title">Donor Information</p>
-      <p class="donor-name">${donorName}</p>
-      <p class="donor-address">${donorAddress}</p>
-      <p class="donor-address">${donorEmail}</p>
-    </div>
-
-    <div class="amount-box">
-      <p class="amount-label">Donation Amount</p>
-      <p class="amount-value">$${gift.amount.toLocaleString()}.00</p>
-    </div>
-
-    <div class="gift-details">
-      <div class="detail-item">
-        <p class="detail-label">Date of Donation</p>
-        <p class="detail-value">${formattedDate}</p>
-      </div>
-      <div class="detail-item">
-        <p class="detail-label">Designation</p>
-        <p class="detail-value">${designation}</p>
-      </div>
-      <div class="detail-item">
-        <p class="detail-label">Gift Type</p>
-        <p class="detail-value">${gift.isRecurring ? 'Recurring' : 'One-time'}</p>
-      </div>
-    </div>
-
-    <div class="tax-info">
-      <p class="tax-title">Tax-Deductible Contribution</p>
-      <p class="tax-text">
-        ${ORG.legalName} is a ${ORG.classification} (EIN ${ORG.ein}).
-        No goods or services were provided in exchange for this contribution.
-        Your donation is tax-deductible to the fullest extent allowed by law.
-      </p>
-      <p class="tax-text" style="margin-top: 15px;">
-        <strong>Please retain this receipt for your tax records.</strong>
-        Your official year-end tax statement is available in your giving portal.
-      </p>
-    </div>
-
-    <div class="footer">
-      <p><strong>${ORG.legalName}</strong></p>
-      <p>${ORG.address}</p>
-      <p>Email: ${ORG.email} &middot; Phone: ${ORG.phone}</p>
-      <p>EIN: ${ORG.ein} &middot; ${ORG.website}</p>
-      <p style="margin-top: 15px; font-style: italic;">
-        Thank you for your generous support of our mission!
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
 }

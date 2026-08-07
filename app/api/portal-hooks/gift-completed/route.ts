@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     const payload = { email, scope: "portal" as const, redirectTo: "/giving" };
     const pageToken = await createMagicLinkToken(env.SESSIONS, payload);
     const emailToken = await createMagicLinkToken(env.SESSIONS, payload);
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://favor-portal.marketing-6e9.workers.dev";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://my.favorintl.org";
     const loginUrl = `${baseUrl}/verify?token=${pageToken}`;
     const emailLoginUrl = `${baseUrl}/verify?token=${emailToken}`;
 

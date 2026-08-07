@@ -79,35 +79,10 @@ export default function GivingHistoryPage() {
     toast.success("Export downloaded");
   }
 
-  function downloadReceipt(gift: Gift) {
-    const receiptNo = gift.receiptNumber ?? gift.blackbaudGiftId ?? gift.id;
-    const text = [
-      "FAVOR INTERNATIONAL - GIFT RECORD",
-      "=".repeat(42),
-      "",
-      `Receipt #: ${receiptNo}`,
-      `Gift date: ${formatDate(gift.date)}`,
-      gift.receiptDate ? `Receipted: ${formatDate(gift.receiptDate)}` : "",
-      `Donor: ${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
-      `Amount: ${formatCurrency(gift.amount)}`,
-      `Designation: ${gift.designation}`,
-      `Type: ${gift.isRecurring ? "Recurring" : "One-time"}`,
-      "",
-      "Favor International, Inc. - EIN: 47-5225697",
-      "11268 Winthrop Main Street #102, Riverview, FL 33578",
-      "501(c)(3) public charity",
-      "",
-      "Your official tax receipt is issued by Blackbaud, Favor's donation",
-      "processor, at the time of each gift.",
-    ].join("\n");
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `favor-receipt-${gift.id}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Receipt downloaded");
+  // The receipt is a real document: a branded page that prints to PDF,
+  // rendered server-side so it always carries current org and tax details.
+  function openReceipt(gift: Gift) {
+    window.open(`/api/giving/receipt/${gift.id}`, "_blank", "noopener");
   }
 
   return (
@@ -251,7 +226,7 @@ export default function GivingHistoryPage() {
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs text-[#2b4d24] hover:text-[#1a3a15]"
-                          onClick={() => downloadReceipt(gift)}
+                          onClick={() => openReceipt(gift)}
                         >
                           <Download className="mr-1 h-3 w-3" />
                           Download

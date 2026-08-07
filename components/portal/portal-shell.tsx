@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { getNotifications } from "@/lib/local-storage";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +60,12 @@ export function PortalShell({ children }: PortalShellProps) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  // The dot only appears when there is genuinely something unread. Read on
+  // mount and whenever the panel closes, since the panel marks items read.
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    setUnreadCount(getNotifications().filter((n) => !n.read).length);
+  }, [notifOpen]);
 
   const accountItems = useMemo(() => {
     if (user?.isAdmin) {
@@ -187,7 +194,9 @@ export function PortalShell({ children }: PortalShellProps) {
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-9 w-9 text-[#8b957b] hover:text-[#2b4d24]" aria-label="Notifications">
                     <Bell className="h-5 w-5" />
-                    <span className="absolute right-1.5 top-1.5 flex h-2 w-2 rounded-full bg-[#e1a730]" />
+                    {unreadCount > 0 && (
+                      <span className="absolute right-1.5 top-1.5 flex h-2 w-2 rounded-full bg-[#e1a730]" />
+                    )}
                   </Button>
                 </SheetTrigger>
                 <SheetContent side="right" className="w-80 sm:w-96 glass-elevated p-0 border-l-0">
@@ -236,9 +245,9 @@ export function PortalShell({ children }: PortalShellProps) {
           <div className="mx-auto flex w-full max-w-[1400px] flex-col items-center gap-2 px-4 py-6 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
             <p className="text-xs text-[#8b957b]">{APP_CONFIG.name} &middot; 11268 Winthrop Main Street #102, Riverview, FL 33578</p>
             <div className="flex items-center gap-3 text-xs text-[#8b957b]">
-              <a href="https://favor-astro.pages.dev/legal/privacy/" target="_blank" rel="noopener noreferrer" className="hover:text-[#2b4d24]">Privacy</a>
+              <a href="https://favorintl.org/legal/privacy/" target="_blank" rel="noopener noreferrer" className="hover:text-[#2b4d24]">Privacy</a>
               <span className="text-[#c5ccc2]">&middot;</span>
-              <a href="https://favor-astro.pages.dev/legal/terms/" target="_blank" rel="noopener noreferrer" className="hover:text-[#2b4d24]">Terms</a>
+              <a href="https://favorintl.org/legal/terms/" target="_blank" rel="noopener noreferrer" className="hover:text-[#2b4d24]">Terms</a>
               <span className="text-[#c5ccc2]">&middot;</span>
               <span className="italic text-[#8b957b]/70">{APP_CONFIG.tagline}</span>
             </div>

@@ -2,7 +2,7 @@
 // (the only place a card is ever entered). The portal NEVER processes payment
 // itself; it links out to the real, secure form. Monthly is the lead path.
 
-export const GIVE_BASE = "https://favor-astro.pages.dev/give/donate/";
+export const GIVE_BASE = "https://favorintl.org/give/donate/";
 
 export function giveUrl(
   frequency: "monthly" | "once" = "monthly",
@@ -14,4 +14,4 @@ export function giveUrl(
   return `${GIVE_BASE}?${params.toString()}`;
 }
 
-export const FIELD_FEED_URL = "https://favor-astro.pages.dev/field-updates.json";
+export const FIELD_FEED_URL = "https://favorintl.org/field-updates.json";

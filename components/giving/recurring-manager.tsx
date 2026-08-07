@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Repeat, Pause, Play, XCircle, Pencil, HeartHandshake } from 'lucide-react';
+import { Repeat, Pause, Play, XCircle, Pencil, HeartHandshake, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
 import { giveUrl } from '@/lib/give-links';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/use-auth';
+import { vaultNewCard } from '@/lib/blackbaud-checkout';
 
 // Live recurring giving management, straight from Raiser's Edge NXT through
 // the giving gateway. This is the heart of the phase-1 portal: see the
@@ -33,6 +35,7 @@ export function RecurringManager() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newAmount, setNewAmount] = useState('');
+  const { user } = useAuth();
 
   const load = useCallback(async (fresh = false) => {
     try {
@@ -48,6 +51,34 @@ export function RecurringManager() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Replace the card a monthly gift is charged to. Blackbaud collects and
+  // vaults the card in its own window; the portal only forwards the token.
+  const changeCard = async (id: string) => {
+    if (!user?.email) return;
+    setBusyId(id);
+    try {
+      const cardToken = await vaultNewCard({
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      });
+      if (!cardToken) return; // partner closed the window
+      const res = await fetch(`/api/giving/recurring-live/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_card', card_token: cardToken }),
+      });
+      const data = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || data.success === false) throw new Error(data.error ?? 'Could not update the card');
+      toast.success('Your new card is on file. Future gifts use it.');
+      void load(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update the card');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const act = async (id: string, body: { action: 'pause' | 'resume' | 'cancel' } | { amount: number }, confirmText?: string) => {
     if (confirmText && !window.confirm(confirmText)) return;
@@ -172,6 +203,14 @@ export function RecurringManager() {
                       }}
                     >
                       <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Change amount
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyId === s.id}
+                      onClick={() => changeCard(s.id)}
+                    >
+                      <CreditCard className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Change card
                     </Button>
                     {s.status === 'Active' ? (
                       <Button

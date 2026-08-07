@@ -86,6 +86,7 @@ export async function fetchConstituentByEmail(
 
 export type RecurringAction =
   | { action: "pause" | "resume" | "cancel" }
+  | { action: "update_card"; card_token: string }
   | { amount: number };
 
 /**

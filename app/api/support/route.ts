@@ -4,6 +4,8 @@ import { getDb } from "@/lib/db/client";
 import { createTicketWithMessage, listMyTicketsWithMessages } from "@/lib/db/access/support";
 import { recordActivity } from "@/lib/db/access/activity";
 import { logError, logInfo } from "@/lib/logger";
+import { sendEmail } from "@/lib/resend/client";
+import { ORG } from "@/lib/constants";
 import type { SupportMessage, SupportTicket } from "@/types";
 
 export const runtime = "nodejs";
@@ -102,6 +104,32 @@ export async function POST(request: NextRequest) {
       ...mapTicket(created),
       messages: created.messages.map(mapMessage),
     };
+
+    // A ticket nobody sees is not support. Email the team so a real person
+    // reads it; replying to the message reaches the partner directly.
+    // Failure here never fails the request: the ticket is already saved.
+    const requester = created.requesterName ?? ctx.userId;
+    const requesterEmail = created.requesterEmail ?? "";
+    try {
+      await sendEmail({
+        to: "tech@favorintl.org",
+        ...(requesterEmail ? { replyTo: requesterEmail } : {}),
+        subject: `Partner support: ${subject}`,
+        text: [
+          `${requester}${requesterEmail ? ` <${requesterEmail}>` : ""} submitted a support request in the partner portal.`,
+          "",
+          `Category: ${category}`,
+          `Subject:  ${subject}`,
+          "",
+          message,
+          "",
+          `Ticket ${created.id}`,
+          `${ORG.legalName}`,
+        ].join("\n"),
+      } as Parameters<typeof sendEmail>[0]);
+    } catch (error) {
+      logError({ event: "support.ticket_email_failed", route: "/api/support", error });
+    }
 
     logInfo({
       event: "support.ticket_created",

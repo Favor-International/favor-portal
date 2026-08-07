@@ -47,7 +47,7 @@ export function FromTheField({ limit = 4 }: { limit?: number }) {
           <Newspaper className="h-4 w-4 text-[#2b4d24]" aria-hidden="true" /> From the field
         </CardTitle>
         <a
-          href="https://favor-astro.pages.dev/stories/"
+          href="https://favorintl.org/stories/"
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs font-semibold text-[#2b4d24] hover:underline"
