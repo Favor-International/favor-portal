@@ -1,4 +1,5 @@
 {
+  "observability": { "enabled": true },
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "favor-portal",
   "account_id": "6e975b8c8e7bea3f644c0eb722af991f",

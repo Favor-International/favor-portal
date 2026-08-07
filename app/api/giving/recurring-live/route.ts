@@ -45,7 +45,12 @@ export async function GET(request: Request) {
     }
 
     const schedules = live.gifts
-      .filter((g) => g.is_recurring)
+      // Active and Held only. Terminated schedules used to render as normal
+      // rows, so a partner with an old cancelled gift saw two identical
+      // entries and could try to edit the dead one, which Blackbaud rejects
+      // ("something went wrong", Jennifer Morris, 2026-08-07). Held stays
+      // visible so pause/resume works.
+      .filter((g) => g.is_recurring && (g.status ?? 'Active') !== 'Terminated')
       .map((g) => ({
         id: g.id,
         amount: g.amount,
