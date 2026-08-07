@@ -232,7 +232,7 @@ export async function sendWelcomeEmail(email: string, input: WelcomeEmailInput) 
       ? `Your ${money} monthly partnership is active, designated to ${input.designation}.`
       : `Your ${money} gift is on its way to the field, designated to ${input.designation}.`;
   const heading =
-    input.frequency === 'monthly' ? 'Welcome, Favor Partner.' : 'Thank you. Your gift is on the trail.';
+    input.frequency === 'monthly' ? 'Welcome, Favor Partner.' : 'Thank you. Your gift is on its way to the field.';
 
   const html = `
     <!DOCTYPE html>

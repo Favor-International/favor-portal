@@ -115,7 +115,7 @@ function shell(title: string, body: string): string {
 <div class="sheet">
   <div class="head">
     <p class="wordmark">Favor International</p>
-    <p class="tagline">Transformed Hearts, Transform Nations</p>
+    <p class="tagline">Transformed Hearts Transform Nations</p>
   </div>
   <div class="rule"></div>
   <div class="body">

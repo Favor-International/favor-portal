@@ -126,7 +126,7 @@ export function RecurringManager() {
             <div>
               <p className="font-semibold text-[#1a1a1a]">Become a monthly Favor Partner</p>
               <p className="text-sm text-[#6f7766]">
-                Monthly partnership keeps indigenous missionaries on the trail every single month. Start,
+                Monthly partnership keeps indigenous missionaries in the field every single month. Start,
                 change, or cancel anytime, right here.
               </p>
             </div>

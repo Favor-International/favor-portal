@@ -45,7 +45,7 @@ export function GiveCta({ compact = false }: { compact?: boolean }) {
     <div className="overflow-hidden rounded-2xl border border-[#2b4d24]/15 bg-gradient-to-br from-[#2b4d24] to-[#24401e] p-6 text-white shadow-[0_18px_50px_-24px_rgba(43,77,36,0.7)]">
       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#e1a730]">Become a Favor Partner</p>
       <h3 className="mt-1 text-xl font-extrabold leading-snug">
-        Keep a missionary on the trail every month.
+        Keep a missionary in the field every month.
       </h3>
       <p className="mt-1.5 max-w-md text-sm text-white/80">
         Monthly partnership is the steady support that lets indigenous leaders plan, stay, and reach
