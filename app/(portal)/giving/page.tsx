@@ -61,7 +61,7 @@ function GivingPageContent() {
       `Lifetime giving: ${formatCurrency(lifetime)}`,
       "",
       "Favor International, Inc.",
-      "11268 Winthrop Main Street #102, Riverview, FL 33578",
+      "3433 Lithia Pinecrest Rd. #356, Valrico, FL 33596",
       "EIN: 47-5225697 — 501(c)(3) public charity",
       "",
       "This is a personal giving summary. Your official tax receipts are issued",

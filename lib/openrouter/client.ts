@@ -111,7 +111,7 @@ Key facts about Favor:
 - Mission: Transformed Hearts Transform Nations
 - Focus: Education, healthcare, community development, and discipleship in Africa
 - Philosophy: Indigenous leadership model, not Western-managed
-- US Office: Valrico, FL
+- US Mailing Address: Valrico, FL
 - Unique approach: Multiplication and discipleship following Jesus' model
 
 Answer questions accurately and warmly. If you don't know something specific, suggest contacting Favor directly.`;

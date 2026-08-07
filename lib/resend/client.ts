@@ -129,7 +129,7 @@ export async function sendMagicLinkEmail(email: string, token: string) {
                       Transformed Hearts Transform Nations
                     </p>
                     <p style="margin: 8px 0 0; font-size: 12px; color: #666666;">
-                      Favor International, Inc. | 11268 Winthrop Main Street #102, Riverview, FL 33578
+                      Favor International, Inc. | 3433 Lithia Pinecrest Rd. #356, Valrico, FL 33596
                     </p>
                   </td>
                 </tr>
@@ -286,7 +286,7 @@ export async function sendWelcomeEmail(email: string, input: WelcomeEmailInput) 
                       Transformed Hearts Transform Nations
                     </p>
                     <p style="margin: 8px 0 0; font-size: 12px; color: #666666;">
-                      Favor International is a 501(c)(3) public charity. | 11268 Winthrop Main Street #102, Riverview, FL 33578
+                      Favor International is a 501(c)(3) public charity. | 3433 Lithia Pinecrest Rd. #356, Valrico, FL 33596
                     </p>
                   </td>
                 </tr>

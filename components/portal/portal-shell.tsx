@@ -243,7 +243,7 @@ export function PortalShell({ children }: PortalShellProps) {
 
         <footer className="glass-subtle border-t-0">
           <div className="mx-auto flex w-full max-w-[1400px] flex-col items-center gap-2 px-4 py-6 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
-            <p className="text-xs text-[#8b957b]">{APP_CONFIG.name} &middot; 11268 Winthrop Main Street #102, Riverview, FL 33578</p>
+            <p className="text-xs text-[#8b957b]">{APP_CONFIG.name} &middot; 3433 Lithia Pinecrest Rd. #356, Valrico, FL 33596</p>
             <div className="flex items-center gap-3 text-xs text-[#8b957b]">
               <a href="https://favorintl.org/legal/privacy/" target="_blank" rel="noopener noreferrer" className="hover:text-[#2b4d24]">Privacy</a>
               <span className="text-[#c5ccc2]">&middot;</span>

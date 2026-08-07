@@ -37,7 +37,7 @@ export function getGivingTier(lifetimeGiving: number) {
 export const ORG = {
   legalName: 'Favor International, Inc.',
   ein: '47-5225697',
-  address: '11268 Winthrop Main Street #102, Riverview, FL 33578',
+  address: '3433 Lithia Pinecrest Rd. #356, Valrico, FL 33596',
   phone: '941-444-9940',
   email: 'info@favorintl.org',
   website: 'favorintl.org',
