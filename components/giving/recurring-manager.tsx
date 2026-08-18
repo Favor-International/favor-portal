@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Repeat, Pause, Play, XCircle, Pencil, HeartHandshake, CreditCard } from 'lucide-react';
+import { Repeat, Pause, Play, XCircle, HeartHandshake, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
 import { GiveDialog } from '@/components/giving/give-dialog';
 import { toast } from 'sonner';
@@ -14,9 +13,9 @@ import { useAuth } from '@/hooks/use-auth';
 import { vaultNewCard } from '@/lib/blackbaud-checkout';
 
 // Live recurring giving management, straight from Raiser's Edge NXT through
-// the giving gateway. This is the heart of the phase-1 portal: see the
-// monthly gift, change it, pause it, resume it, cancel it. When the donor has
-// no active schedule, the panel becomes the invitation to start one.
+// the giving gateway. See the monthly gift, pause it, resume it, cancel it,
+// or change the card. Amount amendments are not available in SKY, so those
+// go through the US office.
 
 interface Schedule {
   id: string;
@@ -31,8 +30,6 @@ export function RecurringManager() {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
   const [configured, setConfigured] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [newAmount, setNewAmount] = useState('');
   const { user } = useAuth();
 
   const load = useCallback(async (fresh = false) => {
@@ -78,7 +75,7 @@ export function RecurringManager() {
     }
   };
 
-  const act = async (id: string, body: { action: 'pause' | 'resume' | 'cancel' } | { amount: number }, confirmText?: string) => {
+  const act = async (id: string, body: { action: 'pause' | 'resume' | 'cancel' }, confirmText?: string) => {
     if (confirmText && !window.confirm(confirmText)) return;
     setBusyId(id);
     try {
@@ -92,16 +89,14 @@ export function RecurringManager() {
         toast.error(data.error ?? 'The change could not be completed');
         return;
       }
-      toast.success('action' in body
-        ? body.action === 'cancel'
+      toast.success(
+        body.action === 'cancel'
           ? 'Your monthly gift has been cancelled.'
           : body.action === 'pause'
             ? 'Your monthly gift is paused.'
             : 'Your monthly gift is active again.'
-        : `Monthly amount updated to ${formatCurrency(body.amount)}.`);
-      setEditingId(null);
-      setNewAmount('');
-      await load(true); // force a fresh pull so the change shows immediately
+      );
+      await load(true);
     } finally {
       setBusyId(null);
     }
@@ -126,8 +121,8 @@ export function RecurringManager() {
             <div>
               <p className="font-semibold text-[#1a1a1a]">Become a monthly Favor Partner</p>
               <p className="text-sm text-[#6f7766]">
-                Monthly partnership keeps indigenous missionaries in the field every single month. Start,
-                change, or cancel anytime, right here.
+                Monthly partnership keeps indigenous missionaries in the field every single month. Start
+                or cancel anytime, right here. Amount changes go through the US office.
               </p>
             </div>
           </div>
@@ -173,92 +168,58 @@ export function RecurringManager() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {editingId === s.id ? (
-                  <>
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={newAmount}
-                      onChange={(e) => setNewAmount(e.target.value)}
-                      placeholder={String(s.amount)}
-                      className="w-28"
-                      aria-label="New monthly amount"
-                    />
-                    <Button
-                      size="sm"
-                      disabled={busyId === s.id || !(Number(newAmount) >= 1)}
-                      onClick={() => act(s.id, { amount: Number(newAmount) })}
-                    >
-                      Save
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                      Cancel
-                    </Button>
-                  </>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId === s.id}
+                  onClick={() => changeCard(s.id)}
+                >
+                  <CreditCard className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Change card
+                </Button>
+                {s.status === 'Active' ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busyId === s.id}
+                    onClick={() => act(s.id, { action: 'pause' }, 'Pause your monthly gift? You can resume anytime.')}
+                  >
+                    <Pause className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Pause
+                  </Button>
                 ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyId === s.id}
-                      onClick={() => {
-                        setEditingId(s.id);
-                        setNewAmount(String(s.amount));
-                      }}
-                    >
-                      <Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Change amount
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busyId === s.id}
-                      onClick={() => changeCard(s.id)}
-                    >
-                      <CreditCard className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Change card
-                    </Button>
-                    {s.status === 'Active' ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busyId === s.id}
-                        onClick={() => act(s.id, { action: 'pause' }, 'Pause your monthly gift? You can resume anytime.')}
-                      >
-                        <Pause className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Pause
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={busyId === s.id}
-                        onClick={() => act(s.id, { action: 'resume' })}
-                      >
-                        <Play className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Resume
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                      disabled={busyId === s.id}
-                      onClick={() =>
-                        act(
-                          s.id,
-                          { action: 'cancel' },
-                          'Cancel your monthly gift? The field will feel it; you can restart anytime.',
-                        )
-                      }
-                    >
-                      <XCircle className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Cancel
-                    </Button>
-                  </>
+                  <Button
+                    size="sm"
+                    disabled={busyId === s.id}
+                    onClick={() => act(s.id, { action: 'resume' })}
+                  >
+                    <Play className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Resume
+                  </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                  disabled={busyId === s.id}
+                  onClick={() =>
+                    act(
+                      s.id,
+                      { action: 'cancel' },
+                      'Cancel your monthly gift? The field will feel it; you can restart anytime.',
+                    )
+                  }
+                >
+                  <XCircle className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Cancel
+                </Button>
               </div>
             </div>
           </div>
         ))}
         <p className="text-xs text-[#6f7766]">
-          Changes apply to Favor&rsquo;s donor system immediately. Your card is only charged on your
-          regular monthly date.
+          Pause, resume, cancel, and card updates apply immediately. To change the monthly amount,
+          email{' '}
+          <a className="underline" href="mailto:partners@favorintl.org">
+            partners@favorintl.org
+          </a>
+          . Your card is only charged on your regular monthly date.
         </p>
       </CardContent>
     </Card>
