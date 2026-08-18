@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Download, Calendar, FileText } from "lucide-react";
 import { EmptyState } from "@/components/portal/empty-state";
+import { GiftSyncNotice } from "@/components/giving/gift-sync-notice";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 import { PageBreadcrumb, PageBackButton } from "@/components/giving/page-navigation";
 import { formatCurrency, formatDate, formatDateShort, giftYear } from "@/lib/utils";
@@ -31,7 +32,7 @@ import type { Gift } from "@/types";
 
 export default function GivingHistoryPage() {
   const { user } = useAuth();
-  const { gifts, isLoading } = useGiving(user?.id);
+  const { gifts, isLoading, pendingSync, refresh } = useGiving(user?.id);
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
@@ -183,7 +184,17 @@ export default function GivingHistoryPage() {
       </div>
 
       {/* Table */}
-      {filtered.length > 0 ? (
+      {allGifts.length === 0 ? (
+        pendingSync ? (
+          <GiftSyncNotice onRefresh={refresh} />
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No gifts yet"
+            description="Your gifts will appear here after they post. If you gave today, refresh in a minute or email partners@favorintl.org."
+          />
+        )
+      ) : filtered.length > 0 ? (
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">

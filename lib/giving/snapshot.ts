@@ -67,8 +67,14 @@ export async function getGivingSnapshot(
 
   const data = await fetchGivingHistoryByEmail(email);
   if (data && store) {
-    const snap: Snapshot = { fetchedAt: Date.now(), data };
-    await store.put(keyFor(userId), JSON.stringify(snap), { expirationTtl: KV_TTL_SECONDS });
+    const empty = !data.constituent && (data.gifts?.length ?? 0) === 0;
+    // An empty first fetch after a gift used to stick for 15 minutes and
+    // keep the dashboard at $0. Skip caching that miss so the next load
+    // (or the auto-refresh) can pick the gift up.
+    if (!empty) {
+      const snap: Snapshot = { fetchedAt: Date.now(), data };
+      await store.put(keyFor(userId), JSON.stringify(snap), { expirationTtl: KV_TTL_SECONDS });
+    }
   }
   return data;
 }

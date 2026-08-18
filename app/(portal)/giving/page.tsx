@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Heart, Download, History, ArrowRight, RefreshCw } from "lucide-react";
 import { RecurringManager } from "@/components/giving/recurring-manager";
 import { GiveCta } from "@/components/giving/give-cta";
+import { GiftSyncNotice } from "@/components/giving/gift-sync-notice";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 import { formatCurrency, formatDateShort, giftYear } from "@/lib/utils";
 import { toast } from "sonner";
@@ -24,7 +25,7 @@ export default function GivingPage() {
 
 function GivingPageContent() {
   const { user } = useAuth();
-  const { gifts, totalGiven, ytdGiven, isLoading } = useGiving(user?.id);
+  const { gifts, totalGiven, ytdGiven, isLoading, pendingSync, refresh } = useGiving(user?.id);
   const [refreshing, setRefreshing] = useState(false);
 
   async function refreshFromBlackbaud() {
@@ -107,6 +108,8 @@ function GivingPageContent() {
       {/* Monthly-first push */}
       <GiveCta />
 
+      {pendingSync ? <GiftSyncNotice onRefresh={refresh} /> : null}
+
       {/* Summary stats */}
       <div className="grid gap-4 sm:grid-cols-3">
         {[
@@ -143,6 +146,8 @@ function GivingPageContent() {
                   {mostRecent.isRecurring ? "Recurring" : "One-time"}
                 </Badge>
               </div>
+            ) : pendingSync ? (
+              <p className="mt-2 text-sm text-[#6f7766]">Your gift is syncing. Check back in a minute.</p>
             ) : (
               <p className="mt-2 text-sm text-[#6f7766]">No gifts yet. Your first gift will appear here.</p>
             )}

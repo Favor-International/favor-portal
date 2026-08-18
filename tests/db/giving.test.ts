@@ -3,6 +3,7 @@ import { makeTestDb, ctxFor, seedUser } from "./helpers";
 import {
   listGivingHistory,
   createOneTimeGift,
+  recordImportedGift,
   listRecurringGifts,
   updateRecurringGiftStatus,
   cancelRecurringGift,
@@ -65,6 +66,30 @@ describe("giving history access (owner-scoped)", () => {
     expect(row.isRecurring).toBe(false);
     expect(row.note).toBe("thank you");
     expect(await listGivingHistory(db, ctxB)).toHaveLength(0);
+  });
+
+  it("recordImportedGift writes once per Blackbaud gift id", async () => {
+    const first = await recordImportedGift(db, {
+      userId: "userA",
+      amount: 35,
+      giftDate: "2026-08-18T00:00:00",
+      designation: "Where Needed Most",
+      blackbaudGiftId: "999001",
+    });
+    const second = await recordImportedGift(db, {
+      userId: "userA",
+      amount: 35,
+      giftDate: "2026-08-18T00:00:00",
+      designation: "Where Needed Most",
+      blackbaudGiftId: "999001",
+    });
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    const rows = await listGivingHistory(db, ctxA);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(35);
+    expect(rows[0].blackbaudGiftId).toBe("999001");
+    expect(rows[0].source).toBe("imported");
   });
 });
 

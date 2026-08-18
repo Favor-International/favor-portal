@@ -40,6 +40,7 @@ export async function GET() {
     if ("error" in auth) return auth.error;
     const { ctx } = auth;
     const db = getDb();
+    const userRow = await getUserById(db, ctx.userId);
 
     let live: GatewayHistory | null = null;
 
@@ -48,36 +49,33 @@ export async function GET() {
     // OAuth token), refresh the local giving_cache, then serve from the
     // cache so gift ids stay stable for receipt links. Any gateway problem
     // falls through to the cache alone.
-    if (givingGatewayConfigured()) {
-      const userRow = await getUserById(db, ctx.userId);
-      if (userRow?.email) {
-        // Cached per user; refetches only after a new login or past the TTL.
-        live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
-          notBefore: userRow.lastLogin,
-        });
-        if (live) {
-          const snap = live; // const capture for use inside the map closure
-          try {
-            if (snap.constituent && !userRow.blackbaudConstituentId) {
-              await linkOwnConstituent(db, ctx, snap.constituent.id);
-            }
-            const moneyRows = snap.gifts
-              .filter((g) => !g.is_recurring) // schedules are not received money
-              .map(
-                (g): BlackbaudGift & { receiptSent?: boolean } => ({
-                  id: g.id,
-                  constituentId: snap.constituent?.id ?? "",
-                  amount: g.amount,
-                  date: g.date ?? new Date().toISOString(),
-                  designation: g.designation ?? "Where Needed Most",
-                  type: g.is_recurring_payment ? "recurring" : "one_time",
-                  receiptSent: g.receipted,
-                })
-              );
-            await syncOwnGivingCache(db, ctx, moneyRows);
-          } catch (error) {
-            logError({ event: "giving.history.sync_failed", route: "/api/giving/history", error });
+    if (givingGatewayConfigured() && userRow?.email) {
+      // Cached per user; refetches only after a new login or past the TTL.
+      live = await getGivingSnapshot(ctx.userId, userRow.email.toLowerCase(), {
+        notBefore: userRow.lastLogin,
+      });
+      if (live) {
+        const snap = live; // const capture for use inside the map closure
+        try {
+          if (snap.constituent && !userRow.blackbaudConstituentId) {
+            await linkOwnConstituent(db, ctx, snap.constituent.id);
           }
+          const moneyRows = snap.gifts
+            .filter((g) => !g.is_recurring) // schedules are not received money
+            .map(
+              (g): BlackbaudGift & { receiptSent?: boolean } => ({
+                id: g.id,
+                constituentId: snap.constituent?.id ?? "",
+                amount: g.amount,
+                date: g.date ?? new Date().toISOString(),
+                designation: g.designation ?? "Where Needed Most",
+                type: g.is_recurring_payment ? "recurring" : "one_time",
+                receiptSent: g.receipted,
+              })
+            );
+          await syncOwnGivingCache(db, ctx, moneyRows);
+        } catch (error) {
+          logError({ event: "giving.history.sync_failed", route: "/api/giving/history", error });
         }
       }
     }
@@ -109,22 +107,31 @@ export async function GET() {
       .filter((gift) => new Date(gift.date).getFullYear() === currentYear)
       .reduce((sum, gift) => sum + gift.amount, 0);
 
+    // Never let a live $0 (email not in the sync DB yet) hide gifts we already
+    // wrote into giving_cache from the post-gift hook.
+    const liveLifetime = Number(live?.summary.lifetime_total ?? 0);
+    const totalGiven = Math.max(liveLifetime, computedTotal);
+    const createdMs = userRow?.createdAt ? Date.parse(userRow.createdAt) : NaN;
+    const pendingSync =
+      gifts.length === 0 && Number.isFinite(createdMs) && Date.now() - createdMs < 2 * 60 * 60 * 1000;
+
+    const oldest = gifts.length ? [...gifts].sort((a, b) => a.date.localeCompare(b.date))[0] : null;
     const summary = {
       // Authoritative lifetime (server-computed by Blackbaud, not capped by the
       // 200-gift page) when available; otherwise the sum of loaded gifts.
-      totalGiven: live?.summary.lifetime_total ?? computedTotal,
+      totalGiven,
       loadedTotal: computedTotal,
       ytdGiven,
       giftCount: gifts.length,
       yearsActive: years.length > 0 ? currentYear - Math.min(...years) + 1 : 1,
-      lifetimeTotal: live?.summary.lifetime_total ?? null,
+      lifetimeTotal: totalGiven > 0 ? totalGiven : live?.summary.lifetime_total ?? null,
       consecutiveYearsGiven: live?.summary.consecutive_years_given ?? null,
       totalYearsGiven: live?.summary.total_years_given ?? null,
-      firstGiftDate: live?.summary.first_gift_date ?? null,
-      firstGiftAmount: live?.summary.first_gift_amount ?? null,
+      firstGiftDate: live?.summary.first_gift_date ?? oldest?.date ?? null,
+      firstGiftAmount: live?.summary.first_gift_amount ?? oldest?.amount ?? null,
     };
 
-    return NextResponse.json({ success: true, gifts, summary });
+    return NextResponse.json({ success: true, gifts, summary, pendingSync });
   } catch (error) {
     logError({ event: "giving.history.fetch_failed", route: "/api/giving/history", error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

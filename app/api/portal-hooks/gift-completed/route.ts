@@ -3,6 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
+import { recordImportedGift } from "@/lib/db/access/giving";
 import { logError, logInfo } from "@/lib/logger";
 import { createMagicLinkToken } from "@/lib/auth/tokens";
 import { sendWelcomeEmail } from "@/lib/resend/client";
@@ -37,7 +38,15 @@ type HookBody = {
   frequency?: "once" | "monthly";
   designation?: string;
   constituent_id?: string;
+  gift_id?: string;
+  payment_gift_id?: string;
+  gift_date?: string;
 };
+
+function blackbaudId(value: unknown): string {
+  const id = typeof value === "string" ? value.trim() : "";
+  return /^\d+$/.test(id) ? id : "";
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,6 +83,7 @@ export async function POST(request: NextRequest) {
         phone: body.phone ?? null,
         blackbaudConstituentId: body.constituent_id ?? null,
         constituentType: "individual",
+        lifetimeGivingTotal: amount > 0 ? amount : 0,
         createdAt: now,
       });
       user = await db.select().from(users).where(eq(users.id, id)).get();
@@ -86,6 +96,34 @@ export async function POST(request: NextRequest) {
     }
     if (!user) {
       return NextResponse.json({ error: "provisioning failed" }, { status: 500 });
+    }
+
+    // Seed giving_cache now so the thank-you login is not a $0 dashboard.
+    // The money row is the one-time gift, or the first RecurringGiftPayment.
+    const moneyGiftId = blackbaudId(body.payment_gift_id) || blackbaudId(body.gift_id);
+    const giftDate =
+      typeof body.gift_date === "string" && body.gift_date.trim()
+        ? body.gift_date.trim()
+        : new Date().toISOString();
+    if (amount > 0 && moneyGiftId) {
+      try {
+        const inserted = await recordImportedGift(db, {
+          userId: user.id,
+          amount,
+          giftDate,
+          designation,
+          blackbaudGiftId: moneyGiftId,
+          isRecurring: frequency === "monthly",
+        });
+        if (inserted && !created) {
+          await db
+            .update(users)
+            .set({ lifetimeGivingTotal: Number(user.lifetimeGivingTotal ?? 0) + amount })
+            .where(eq(users.id, user.id));
+        }
+      } catch (error) {
+        logError({ event: "portal_hook.gift_cache_failed", route: "/api/portal-hooks/gift-completed", error });
+      }
     }
 
     // Two independent one-time tokens: one rides back to the thank-you page

@@ -8,12 +8,13 @@ import { Heart, Calendar, Receipt, ArrowRight, UserCog, History } from "lucide-r
 import { RecurringManager } from "@/components/giving/recurring-manager";
 import { FromTheField } from "@/components/giving/from-the-field";
 import { GiveDialog } from "@/components/giving/give-dialog";
+import { GiftSyncNotice } from "@/components/giving/gift-sync-notice";
 import { DashboardSkeleton } from "@/components/portal/dashboard/dashboard-skeleton";
 import { formatCurrency } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { user, isLoading: userLoading } = useAuth();
-  const { totalGiven, ytdGiven, gifts, isLoading: givingLoading } = useGiving(user?.id);
+  const { totalGiven, ytdGiven, gifts, isLoading: givingLoading, pendingSync, refresh } = useGiving(user?.id);
 
   if (userLoading || givingLoading) {
     return <DashboardSkeleton />;
@@ -42,6 +43,8 @@ export default function DashboardPage() {
           Your giving home. Manage your partnership, see your history, and follow the field.
         </p>
       </header>
+
+      {pendingSync ? <GiftSyncNotice onRefresh={refresh} /> : null}
 
       {/* Giving summary */}
       <div className="grid gap-4 sm:grid-cols-3">
