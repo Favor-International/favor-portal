@@ -6,7 +6,7 @@ import { users, userRoles } from "@/lib/db/schema";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { logError, logInfo } from "@/lib/logger";
 import { hasAdminPermission, resolveAdminPermissions } from "@/lib/admin/roles";
-import { blackbaudClient } from "@/lib/blackbaud/client";
+import { fetchConstituentByEmail } from "@/lib/blackbaud/gateway";
 import type { BlackbaudConstituent } from "@/types";
 import { consumeMagicLinkToken } from "@/lib/auth/tokens";
 import { createSession } from "@/lib/auth/session";
@@ -41,12 +41,28 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     const email = payload.email.toLowerCase();
 
-    // If the user is new, try to enrich from SKY before provisioning.
+    // If the user is new, enrich from Blackbaud through the giving gateway
+    // before provisioning: link the constituent id so their real giving
+    // history populates the moment they open the Giving page.
     let constituent: BlackbaudConstituent | null = null;
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).get();
     if (!existing && payload.scope === "portal") {
       try {
-        constituent = await blackbaudClient.getConstituentByEmail(email);
+        const summary = await fetchConstituentByEmail(email);
+        if (summary) {
+          const parts = (summary.name ?? "").trim().split(/\s+/).filter(Boolean);
+          const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0] ?? "";
+          const lastName = parts.length > 1 ? parts[parts.length - 1] : "";
+          constituent = {
+            id: summary.id,
+            email,
+            firstName,
+            lastName,
+            constituentCode: "individual",
+            lifetimeGiving: 0,
+            solicitCodes: [],
+          };
+        }
       } catch (skyError) {
         logError({ event: "auth.verify.sky_lookup_failed", route: "/api/auth/verify", error: skyError });
       }

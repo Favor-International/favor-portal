@@ -6,7 +6,7 @@ import { users, userRoles } from "@/lib/db/schema";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { logError, logInfo } from "@/lib/logger";
 import { hasAdminPermission, resolveAdminPermissions } from "@/lib/admin/roles";
-import { blackbaudClient } from "@/lib/blackbaud/client";
+import { fetchConstituentByEmail } from "@/lib/blackbaud/gateway";
 import { createMagicLinkToken } from "@/lib/auth/tokens";
 import { sendMagicLinkEmail } from "@/lib/resend/client";
 
@@ -65,10 +65,13 @@ export async function POST(request: NextRequest) {
         .where(eq(users.email, email))
         .get();
 
+      // Any donor in Favor's Blackbaud CRM can sign in; their portal account
+      // is provisioned at verify time and their giving history populates from
+      // the live gateway on first view.
       let canProvisionFromSky = false;
       if (!existing && scope === "portal") {
         try {
-          canProvisionFromSky = Boolean(await blackbaudClient.getConstituentByEmail(email));
+          canProvisionFromSky = Boolean(await fetchConstituentByEmail(email));
         } catch (skyError) {
           logError({ event: "auth.magic_link.sky_lookup_failed", route: "/api/auth/magic-link", error: skyError });
         }

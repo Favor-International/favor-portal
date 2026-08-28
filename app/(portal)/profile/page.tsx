@@ -16,14 +16,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, giftYear } from "@/lib/utils";
 import { getGivingTier } from "@/lib/constants";
-import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
+import { ContactSupportButton } from "@/components/portal/contact-support-button";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
 export default function ProfilePage() {
   const { user, isLoading, refreshUser } = useAuth();
-  const { totalGiven, ytdGiven, gifts } = useGiving(user?.id);
+  const { totalGiven, ytdGiven, gifts, summary } = useGiving(user?.id);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -83,7 +83,13 @@ export default function ProfilePage() {
   const initials = user ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase() : "??";
   const lifetime = Math.max(user?.lifetimeGivingTotal ?? 0, totalGiven);
   const tier = getGivingTier(lifetime);
-  const memberSince = user?.createdAt ? new Date(user.createdAt).getFullYear() : null;
+  // Authoritative "partner since" is the year of the donor's first Blackbaud
+  // gift; fall back to the portal signup year only if that is unavailable.
+  const memberSince = summary?.firstGiftDate
+    ? giftYear(summary.firstGiftDate)
+    : user?.createdAt
+      ? giftYear(user.createdAt)
+      : null;
   const cityState = [val("city"), val("state")].filter(Boolean).join(", ");
   const addressLine = [val("street"), cityState, val("zip")].filter(Boolean).join(" · ");
 
@@ -165,7 +171,7 @@ export default function ProfilePage() {
             </div>
           </div>
           <Button className="bg-white text-[#2b4d24] hover:bg-white/90" asChild>
-            <Link href="/giving/impact"><Sparkles className="mr-2 h-4 w-4" />Your impact</Link>
+            <Link href="/giving"><Sparkles className="mr-2 h-4 w-4" />Your giving</Link>
           </Button>
         </div>
       </section>
@@ -229,7 +235,7 @@ export default function ProfilePage() {
                     <a href="mailto:partners@favorintl.org"><Mail className="mr-1.5 h-3.5 w-3.5" />Email</a>
                   </Button>
                   <Button variant="outline" size="sm" className="flex-1" asChild>
-                    <a href="tel:+18005550100"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
+                    <a href="tel:+19414449940"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
                   </Button>
                 </div>
               </>
@@ -237,8 +243,16 @@ export default function ProfilePage() {
               <div className="mt-4 flex flex-1 flex-col items-start justify-center">
                 <UserRound className="h-8 w-8 text-[#c5ccc2]" />
                 <p className="mt-2 text-sm text-[#6f7766]">
-                  A dedicated partner contact will be assigned to you soon.
+                  Our Partner Care team is here for anything you need.
                 </p>
+                <div className="mt-4 flex w-full gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <a href="mailto:partners@favorintl.org"><Mail className="mr-1.5 h-3.5 w-3.5" />Email</a>
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <a href="tel:+19414449940"><Phone className="mr-1.5 h-3.5 w-3.5" />Call</a>
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -332,7 +346,7 @@ export default function ProfilePage() {
                 <p className="font-semibold text-[#1a1a1a]">Need help?</p>
                 <p className="text-xs text-[#8b957b]">Reach our partner support team</p>
               </div>
-              <ContactSupportDialog trigger={<Button variant="outline" size="sm">Contact</Button>} />
+              <ContactSupportButton label="Contact" variant="outline" size="sm" />
             </CardContent>
           </Card>
         </div>

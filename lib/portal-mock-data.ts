@@ -91,52 +91,6 @@ export const NEWS_FEED: NewsItem[] = [
   },
 ];
 
-export const INITIAL_NOTIFICATIONS: Notification[] = [
-  {
-    id: 'notif-1',
-    title: 'Monthly Gift Processed',
-    message: 'Your recurring gift of $100 was processed successfully.',
-    type: 'gift',
-    read: false,
-    date: '2026-02-01',
-    link: '/giving',
-  },
-  {
-    id: 'notif-2',
-    title: 'New Course Available',
-    message: '"Partnership Foundations" is now available in your course catalog.',
-    type: 'course',
-    read: false,
-    date: '2026-01-30',
-    link: '/courses',
-  },
-  {
-    id: 'notif-3',
-    title: 'Q4 Impact Report Ready',
-    message: 'Your quarterly impact report is available for download.',
-    type: 'report',
-    read: false,
-    date: '2026-01-20',
-    link: '/giving/history',
-  },
-  {
-    id: 'notif-4',
-    title: 'Spring Summit Early Registration',
-    message: 'Register by Feb 28 for the discounted partner rate.',
-    type: 'event',
-    read: true,
-    date: '2026-01-15',
-  },
-  {
-    id: 'notif-5',
-    title: 'Tax Receipt Available',
-    message: 'Your 2025 annual tax receipt is ready to download.',
-    type: 'gift',
-    read: true,
-    date: '2026-01-10',
-    link: '/giving/history',
-  },
-];
 
 export const MODULE_TILES: ModuleTileData[] = [
   {

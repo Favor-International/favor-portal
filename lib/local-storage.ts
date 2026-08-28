@@ -20,16 +20,18 @@ function setItem<T>(key: string, value: T): void {
 }
 
 // --- Notifications ---
-import { Notification, INITIAL_NOTIFICATIONS } from './portal-mock-data';
+import { Notification } from './portal-mock-data';
 import { Gift, SupportTicket } from '@/types';
 
-const NOTIF_KEY = 'favor_notifications';
+// v2: the v1 key holds demo notifications that shipped to real partners.
+// Bumping it retires those copies from every browser that cached them.
+const NOTIF_KEY = 'favor_notifications_v2';
 const TICKETS_KEY = 'favor_support_tickets';
 const LOCAL_GIFTS_KEY = 'favor_local_gifts';
 const SETTINGS_KEY = 'favor_settings';
 
 export function getNotifications(): Notification[] {
-  return getItem<Notification[]>(NOTIF_KEY, INITIAL_NOTIFICATIONS);
+  return getItem<Notification[]>(NOTIF_KEY, []);
 }
 
 export function saveNotifications(notifications: Notification[]): void {

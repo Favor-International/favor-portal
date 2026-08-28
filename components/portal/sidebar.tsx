@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Heart,
-  GraduationCap,
   User,
   Settings,
   ChevronRight,
@@ -13,6 +12,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Phase 1: the portal is a payment management system. Courses (LMS) and the
+// other non-giving modules are archived from navigation, not deleted; their
+// routes stay in the codebase for a later phase.
 const navigation = [
   {
     name: "Dashboard",
@@ -27,11 +29,6 @@ const navigation = [
       { name: "Overview", href: "/giving" },
       { name: "History", href: "/giving/history" },
     ],
-  },
-  {
-    name: "Courses",
-    href: "/courses",
-    icon: GraduationCap,
   },
   {
     name: "Profile",

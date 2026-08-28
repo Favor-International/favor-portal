@@ -165,6 +165,71 @@ export async function upsertGivingCacheRows(
 }
 
 // ---------------------------------------------------------------------------
+// giving_cache (owner-scoped write): sync the calling user's OWN rows from
+// the live Blackbaud gateway. Mirrors upsertGivingCacheRows but without the
+// admin guard; the userId is always the caller's.
+// ---------------------------------------------------------------------------
+export async function syncOwnGivingCache(
+  db: Db,
+  ctx: AuthContext,
+  gifts: Array<BlackbaudGift & { receiptSent?: boolean }>,
+) {
+  const now = new Date().toISOString();
+  let written = 0;
+  for (const gift of gifts) {
+    if (!gift.id) continue;
+    const existing = await db
+      .select()
+      .from(givingCache)
+      .where(eq(givingCache.blackbaudGiftId, gift.id))
+      .get();
+    if (existing) {
+      // Never let one signed-in user absorb rows already owned by another.
+      if (existing.userId !== ctx.userId) continue;
+      await db
+        .update(givingCache)
+        .set({
+          giftDate: gift.date,
+          amount: gift.amount,
+          designation: gift.designation,
+          isRecurring: gift.type === "recurring",
+          receiptSent: gift.receiptSent ?? existing.receiptSent,
+          syncedAt: now,
+        })
+        .where(eq(givingCache.id, existing.id));
+    } else {
+      await db.insert(givingCache).values({
+        id: crypto.randomUUID(),
+        userId: ctx.userId,
+        giftDate: gift.date,
+        amount: gift.amount,
+        designation: gift.designation,
+        blackbaudGiftId: gift.id,
+        isRecurring: gift.type === "recurring",
+        receiptSent: gift.receiptSent ?? false,
+        syncedAt: now,
+        source: "imported" as const,
+        note: null,
+        createdAt: now,
+      });
+    }
+    written += 1;
+  }
+  return written;
+}
+
+// Owner-scoped: remember the caller's Blackbaud constituent id once known.
+export async function linkOwnConstituent(db: Db, ctx: AuthContext, constituentId: string) {
+  const user = await db.select().from(users).where(eq(users.id, ctx.userId)).get();
+  if (!user || user.blackbaudConstituentId) return false;
+  await db
+    .update(users)
+    .set({ blackbaudConstituentId: constituentId })
+    .where(eq(users.id, ctx.userId));
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // communication_preferences (owner-scoped write): persist the solicit codes
 // last pushed to SKY for the calling user.
 // ---------------------------------------------------------------------------

@@ -23,15 +23,16 @@ import {
 } from "@/components/ui/select";
 import { Download, Calendar, FileText } from "lucide-react";
 import { EmptyState } from "@/components/portal/empty-state";
+import { GiftSyncNotice } from "@/components/giving/gift-sync-notice";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 import { PageBreadcrumb, PageBackButton } from "@/components/giving/page-navigation";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDateShort, giftYear } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Gift } from "@/types";
 
 export default function GivingHistoryPage() {
   const { user } = useAuth();
-  const { gifts, isLoading } = useGiving(user?.id);
+  const { gifts, isLoading, pendingSync, refresh } = useGiving(user?.id);
   const [yearFilter, setYearFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
@@ -42,12 +43,12 @@ export default function GivingHistoryPage() {
   const allGifts = gifts;
 
   // Available years
-  const years = [...new Set(allGifts.map((g) => new Date(g.date).getFullYear()))].sort((a, b) => b - a);
+  const years = [...new Set(allGifts.map((g) => giftYear(g.date)).filter((y): y is number => y !== null))].sort((a, b) => b - a);
 
   // Filter
   let filtered = allGifts;
   if (yearFilter !== "all") {
-    filtered = filtered.filter((g) => new Date(g.date).getFullYear() === Number(yearFilter));
+    filtered = filtered.filter((g) => giftYear(g.date) === Number(yearFilter));
   }
   if (typeFilter !== "all") {
     filtered = filtered.filter((g) =>
@@ -57,7 +58,7 @@ export default function GivingHistoryPage() {
 
   // Year summaries
   const yearSummaries = years.slice(0, 4).map((year) => {
-    const yg = allGifts.filter((g) => new Date(g.date).getFullYear() === year);
+    const yg = allGifts.filter((g) => giftYear(g.date) === year);
     return { year, total: yg.reduce((s, g) => s + g.amount, 0), count: yg.length };
   });
 
@@ -66,7 +67,7 @@ export default function GivingHistoryPage() {
       "Date,Amount,Designation,Type,Receipt",
       ...filtered.map(
         (g) =>
-          `${new Date(g.date).toLocaleDateString()},${g.amount},${g.designation},${g.isRecurring ? "Recurring" : "One-time"},${g.receiptSent ? "Sent" : "Pending"}`
+          `${formatDateShort(g.date)},${g.amount},${g.designation},${g.isRecurring ? "Recurring" : "One-time"},${g.receiptSent ? "Sent" : "Pending"}`
       ),
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
@@ -79,29 +80,10 @@ export default function GivingHistoryPage() {
     toast.success("Export downloaded");
   }
 
-  function downloadReceipt(gift: Gift) {
-    const text = [
-      "FAVOR INTERNATIONAL - GIFT RECEIPT",
-      "=".repeat(42),
-      "",
-      `Receipt #: ${gift.id}`,
-      `Date: ${new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
-      `Donor: ${user?.firstName} ${user?.lastName}`,
-      `Amount: $${gift.amount.toLocaleString()}.00`,
-      `Designation: ${gift.designation}`,
-      `Type: ${gift.isRecurring ? "Recurring" : "One-time"}`,
-      "",
-      "Favor International, Inc. - EIN: XX-XXXXXXX",
-      "501(c)(3) Non-Profit Organization",
-    ].join("\n");
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `favor-receipt-${gift.id}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Receipt downloaded");
+  // The receipt is a real document: a branded page that prints to PDF,
+  // rendered server-side so it always carries current org and tax details.
+  function openReceipt(gift: Gift) {
+    window.open(`/api/giving/receipt/${gift.id}`, "_blank", "noopener");
   }
 
   return (
@@ -119,10 +101,22 @@ export default function GivingHistoryPage() {
             View and download your complete giving history for tax purposes.
           </p>
         </div>
-        <Button variant="outline" onClick={exportCSV}>
-          <Download className="mr-2 h-4 w-4" />
-          Export CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <a
+              href={`/api/giving/statement/${yearFilter !== "all" ? yearFilter : years[0] ?? new Date().getFullYear()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              {yearFilter !== "all" ? `${yearFilter} tax statement` : "Year-end tax statement"}
+            </a>
+          </Button>
+          <Button variant="outline" onClick={exportCSV}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* Year summary cards */}
@@ -190,7 +184,17 @@ export default function GivingHistoryPage() {
       </div>
 
       {/* Table */}
-      {filtered.length > 0 ? (
+      {allGifts.length === 0 ? (
+        pendingSync ? (
+          <GiftSyncNotice onRefresh={refresh} />
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No gifts yet"
+            description="Your gifts will appear here after they post. If you gave today, refresh in a minute or email partners@favorintl.org."
+          />
+        )
+      ) : filtered.length > 0 ? (
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -208,7 +212,7 @@ export default function GivingHistoryPage() {
                   {filtered.map((gift) => (
                     <TableRow key={gift.id}>
                       <TableCell className="text-sm text-[#666666]">
-                        {new Date(gift.date).toLocaleDateString()}
+                        {formatDateShort(gift.date)}
                       </TableCell>
                       <TableCell className="font-medium text-[#1a1a1a]">
                         ${gift.amount.toLocaleString()}
@@ -217,16 +221,23 @@ export default function GivingHistoryPage() {
                         {gift.designation}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={gift.isRecurring ? "default" : "secondary"} className="text-[10px]">
-                          {gift.isRecurring ? "Recurring" : "One-time"}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge variant={gift.isRecurring ? "default" : "secondary"} className="text-[10px]">
+                            {gift.isRecurring ? "Recurring" : "One-time"}
+                          </Badge>
+                          {gift.receipted ? (
+                            <Badge className="border-0 bg-[#2b4d24]/10 text-[10px] text-[#2b4d24]" title={gift.receiptNumber ? `Receipt #${gift.receiptNumber}` : "Receipted"}>
+                              Receipted
+                            </Badge>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs text-[#2b4d24] hover:text-[#1a3a15]"
-                          onClick={() => downloadReceipt(gift)}
+                          onClick={() => openReceipt(gift)}
                         >
                           <Download className="mr-1 h-3 w-3" />
                           Download
@@ -254,7 +265,7 @@ export default function GivingHistoryPage() {
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { label: "Organization", value: "Favor International, Inc." },
-              { label: "Tax ID (EIN)", value: "XX-XXXXXXX" },
+              { label: "Tax ID (EIN)", value: "47-5225697" },
               { label: "Classification", value: "501(c)(3) Non-Profit" },
               { label: "Deductibility", value: "Fully tax-deductible" },
             ].map((item) => (

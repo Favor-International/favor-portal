@@ -7,6 +7,8 @@ import {
   type CommPreferencesInput,
 } from "@/lib/db/access/profile";
 import { logError, logInfo } from "@/lib/logger";
+import { pushContactPreferences } from "@/lib/blackbaud/gateway";
+import { getUserById } from "@/lib/db/access/sky";
 
 export const runtime = "nodejs";
 
@@ -66,7 +68,30 @@ async function handleUpdate(request: NextRequest) {
   if ("error" in auth) return auth.error;
   const { ctx } = auth;
 
-  const preferences = await updateCommPreferences(getDb(), ctx, input);
+  const db = getDb();
+  const preferences = await updateCommPreferences(db, ctx, input);
+
+  // The portal is not the system of record for consent: RE NXT is. Push the
+  // channel-level choices there so the mail house and email team see them.
+  // Failure-isolated on purpose, the partner's save already succeeded.
+  let blackbaud: Record<string, string> | null = null;
+  try {
+    const userRow = await getUserById(db, ctx.userId);
+    if (userRow?.email && preferences) {
+      blackbaud = await pushContactPreferences(userRow.email.toLowerCase(), {
+        // No email category left on means the partner wants no email at all.
+        email_opt_out: !(
+          preferences.emailNewsletterMonthly ||
+          preferences.emailEvents ||
+          preferences.emailGivingConfirmations
+        ),
+        mail_opt_out: !preferences.mailEnabled,
+        phone_opt_out: !preferences.smsEnabled,
+      });
+    }
+  } catch (error) {
+    logError({ event: "preferences.blackbaud_push_failed", route: "/api/preferences", error });
+  }
 
   logInfo({
     event: "preferences.updated",
@@ -74,7 +99,7 @@ async function handleUpdate(request: NextRequest) {
     userId: ctx.userId,
   });
 
-  return NextResponse.json({ success: true, preferences: preferences ?? null });
+  return NextResponse.json({ success: true, preferences: preferences ?? null, blackbaud });
 }
 
 export async function PUT(request: NextRequest) {

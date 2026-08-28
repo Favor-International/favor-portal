@@ -52,6 +52,24 @@ export interface Gift {
   isRecurring: boolean;
   receiptSent: boolean;
   source?: 'imported' | 'portal';
+  // Read-only receipt enrichment from Blackbaud (optional; present when the
+  // gift has an issued receipt).
+  receipted?: boolean;
+  receiptNumber?: number | null;
+  receiptDate?: string | null;
+}
+
+export interface GivingSummary {
+  totalGiven: number;
+  loadedTotal?: number;
+  ytdGiven: number;
+  giftCount: number;
+  yearsActive: number;
+  lifetimeTotal?: number | null;
+  consecutiveYearsGiven?: number | null;
+  totalYearsGiven?: number | null;
+  firstGiftDate?: string | null;
+  firstGiftAmount?: number | null;
 }
 
 export interface RecurringGift {

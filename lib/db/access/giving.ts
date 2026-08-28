@@ -60,6 +60,41 @@ export async function listGivingHistory(db: Db, ctx: AuthContext) {
     .all();
 }
 
+export type ImportedGiftInput = {
+  userId: string;
+  amount: number;
+  giftDate: string;
+  designation: string;
+  blackbaudGiftId: string;
+  isRecurring?: boolean;
+};
+
+/** Write a just-completed web gift into giving_cache. Returns true if a new row was inserted. */
+export async function recordImportedGift(db: Db, input: ImportedGiftInput): Promise<boolean> {
+  const existing = await db
+    .select()
+    .from(givingCache)
+    .where(eq(givingCache.blackbaudGiftId, input.blackbaudGiftId))
+    .get();
+  if (existing) return false;
+  const now = new Date().toISOString();
+  await db.insert(givingCache).values({
+    id: crypto.randomUUID(),
+    userId: input.userId,
+    giftDate: input.giftDate,
+    amount: input.amount,
+    designation: input.designation,
+    blackbaudGiftId: input.blackbaudGiftId,
+    isRecurring: input.isRecurring ?? false,
+    receiptSent: false,
+    syncedAt: now,
+    source: "imported",
+    note: null,
+    createdAt: now,
+  });
+  return true;
+}
+
 export async function createOneTimeGift(db: Db, ctx: AuthContext, input: NewOneTimeGift) {
   const now = new Date().toISOString();
   const row = {

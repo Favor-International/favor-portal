@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { MagicLinkForm } from '@/components/auth/magic-link-form';
+import { PasswordLoginForm } from '@/components/auth/password-login-form';
 import { DemoEntry } from '@/components/auth/demo-entry';
 import { APP_CONFIG } from '@/lib/constants';
 
@@ -85,6 +86,8 @@ export default function LoginPage() {
             title="Welcome back"
             description="Enter your email for a secure sign-in link."
           />
+
+          <PasswordLoginForm />
 
           <p className="mt-4 text-center text-xs text-[#6f7766]">
             Staff/admin?{' '}

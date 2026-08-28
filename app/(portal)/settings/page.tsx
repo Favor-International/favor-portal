@@ -11,19 +11,20 @@ import { usePreferences } from "@/hooks/use-preferences";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Mail, MessageSquare, Mailbox, FileBarChart, ShieldCheck, Save, Check, Download,
-  Newspaper, CalendarDays, ReceiptText, Smartphone, Package, HelpCircle,
+  Newspaper, CalendarDays, ReceiptText, Smartphone, Package, HelpCircle, KeyRound,
   type LucideIcon,
 } from "lucide-react";
+import { SetPasswordCard } from "@/components/auth/set-password-card";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ContactSupportDialog } from "@/components/portal/contact-support-dialog";
+import { ContactSupportButton } from "@/components/portal/contact-support-button";
 import { PortalPageSkeleton } from "@/components/portal/portal-page-skeleton";
 
-type SectionId = "communications" | "reports" | "privacy";
+type SectionId = "communications" | "security" | "privacy";
 
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "communications", label: "Communications & Stories", icon: Mail },
-  { id: "reports", label: "Impact Reports", icon: FileBarChart },
+  { id: "security", label: "Sign-in & Security", icon: KeyRound },
   { id: "privacy", label: "Privacy & Help", icon: ShieldCheck },
 ];
 
@@ -51,15 +52,21 @@ export default function SettingsPage() {
   const { preferences, isLoading, updatePreferences } = usePreferences(user?.id);
   const [section, setSection] = useState<SectionId>("communications");
 
+  // A password-reset email lands here with ?section=security so the partner
+  // does not have to hunt for the form.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    if (requested === "security" || requested === "privacy" || requested === "communications") {
+      setSection(requested);
+    }
+  }, []);
+
   const [emailNewsletter, setEmailNewsletter] = useState(true);
   const [emailEvents, setEmailEvents] = useState(true);
   const [emailGiving, setEmailGiving] = useState(true);
-  const [emailReports, setEmailReports] = useState(true);
   const [smsEnabled, setSmsEnabled] = useState(false);
   const [smsGiftConfirmations, setSmsGiftConfirmations] = useState(false);
   const [mailEnabled, setMailEnabled] = useState(true);
-  const [mailAnnualReport, setMailAnnualReport] = useState(true);
-  const [reportPeriod, setReportPeriod] = useState("quarterly");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -68,12 +75,9 @@ export default function SettingsPage() {
     setEmailNewsletter(preferences.emailNewsletterMonthly);
     setEmailEvents(preferences.emailEvents);
     setEmailGiving(preferences.emailGivingConfirmations);
-    setEmailReports(preferences.emailQuarterlyReport || preferences.emailAnnualReport);
     setSmsEnabled(preferences.smsEnabled);
     setSmsGiftConfirmations(preferences.smsGiftConfirmations);
     setMailEnabled(preferences.mailEnabled);
-    setMailAnnualReport(preferences.mailAnnualReport);
-    setReportPeriod(preferences.reportPeriod);
   }, [preferences]);
 
   async function handleSave() {
@@ -83,13 +87,9 @@ export default function SettingsPage() {
         emailNewsletterMonthly: emailNewsletter,
         emailEvents,
         emailGivingConfirmations: emailGiving,
-        emailQuarterlyReport: emailReports,
-        emailAnnualReport: emailReports,
         smsEnabled,
         smsGiftConfirmations,
         mailEnabled,
-        mailAnnualReport,
-        reportPeriod: reportPeriod === "annual" ? "annual" : "quarterly",
       });
       setSaving(false);
       setSaved(true);
@@ -99,29 +99,6 @@ export default function SettingsPage() {
       setSaving(false);
       toast.error("Failed to save preferences");
     }
-  }
-
-  function downloadReport() {
-    const label = reportPeriod === "quarterly" ? "Q4 2025" : "Annual 2025";
-    const text = [
-      `FAVOR INTERNATIONAL - ${label} IMPACT REPORT`,
-      "=".repeat(50), "",
-      "Summary", "-------",
-      "Communities Served: 12", "Countries Reached: 4", "Lives Impacted: 1,247",
-      "Clean Water Wells: 3", "Students Sponsored: 89", "",
-      "Financial Overview", "------------------",
-      "Total Revenue: $1,245,000", "Program Expenses: $1,020,000 (82%)",
-      "Administrative: $150,000 (12%)", "Fundraising: $75,000 (6%)", "",
-      "Favor International, Inc.", '"Transformed Hearts Transform Nations"',
-    ].join("\n");
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `favor-${reportPeriod}-report-2025.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`${label} report downloaded`);
   }
 
   if (isLoading) return <PortalPageSkeleton />;
@@ -175,7 +152,13 @@ export default function SettingsPage() {
                     <ToggleRow id="newsletter" icon={Newspaper} label="Monthly newsletter" desc="Updates and stories from the field." checked={emailNewsletter} onChange={setEmailNewsletter} />
                     <ToggleRow id="events" icon={CalendarDays} label="Event invitations" desc="Upcoming events and webinars." checked={emailEvents} onChange={setEmailEvents} />
                     <ToggleRow id="giving" icon={ReceiptText} label="Giving confirmations" desc="Receipts when your gift is processed." checked={emailGiving} onChange={setEmailGiving} />
-                    <ToggleRow id="reports" icon={FileBarChart} label="Impact reports" desc="Quarterly and annual impact reports." checked={emailReports} onChange={setEmailReports} />
+                  </div>
+                  <p className="mt-3 text-xs text-[#8b957b]">
+                    Switching every email option off records a do-not-email flag on your
+                    record in Favor&rsquo;s donor database. Individual choices above are kept
+                    in your portal account.
+                  </p>
+                  <div className="hidden">
                   </div>
                 </CardContent>
               </Card>
@@ -203,9 +186,12 @@ export default function SettingsPage() {
                   </div>
                   <div className="mt-2 divide-y divide-[#e5e0d6]">
                     <ToggleRow id="mail-enabled" icon={Package} label="Direct mail" desc="Receive printed materials." checked={mailEnabled} onChange={setMailEnabled} />
-                    {mailEnabled && (
-                      <ToggleRow id="mail-annual" icon={FileBarChart} label="Printed annual report" desc="The full-year impact report by mail." checked={mailAnnualReport} onChange={setMailAnnualReport} />
-                    )}
+                  </div>
+                  <p className="mt-3 text-xs text-[#8b957b]">
+                    Turning this off records a do-not-mail flag on your record in
+                    Favor&rsquo;s donor database, so the mail house stops sending.
+                  </p>
+                  <div className="hidden">
                   </div>
                 </CardContent>
               </Card>
@@ -216,38 +202,8 @@ export default function SettingsPage() {
             </>
           )}
 
-          {section === "reports" && (
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center gap-2">
-                  <FileBarChart className="h-4 w-4 text-[#2b4d24]" />
-                  <h2 className="text-base font-bold tracking-tight text-[#1a1a1a]">Impact reports</h2>
-                </div>
-                <p className="mt-1 text-sm text-[#6f7766]">
-                  See the difference your partnership is making. Choose a period and download the report.
-                </p>
-                <div className="mt-5 max-w-xs space-y-2">
-                  <label htmlFor="report-period" className="text-xs font-medium text-[#8b957b]">Report period</label>
-                  <Select value={reportPeriod} onValueChange={setReportPeriod}>
-                    <SelectTrigger id="report-period"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
-                      <SelectItem value="annual">Annual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <p className="mt-3 text-xs text-[#8b957b]">
-                  {reportPeriod === "quarterly"
-                    ? "Showing Q4 2025 impact data. Switch to annual for the full year."
-                    : "Showing full-year 2025 impact data."}
-                </p>
-                <Button className="mt-5" onClick={downloadReport}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download {reportPeriod === "quarterly" ? "Q4" : "annual"} report
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+          {section === "security" && <SetPasswordCard />}
+
 
           {section === "privacy" && (
             <>
@@ -258,9 +214,25 @@ export default function SettingsPage() {
                     <h2 className="text-base font-bold tracking-tight text-[#1a1a1a]">Privacy</h2>
                   </div>
                   <p className="mt-2 text-sm text-[#6f7766]">
-                    Your preferences are stored securely. Changes may take up to 24 hours to propagate
-                    across all systems.
+                    Favor never sells or rents your information. What you share stays between you and
+                    our team. Your contact preferences live under Communications &amp; Stories; changing
+                    them there is what controls every message we send.
                   </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setSection("communications")}>
+                      Contact preferences
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href="https://favorintl.org/legal/privacy/" target="_blank" rel="noopener noreferrer">
+                        Privacy policy
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href="mailto:admin@favorintl.org?subject=My%20portal%20data">
+                        Request my data
+                      </a>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
               <Card>
@@ -272,7 +244,7 @@ export default function SettingsPage() {
                   <p className="mt-2 mb-4 text-sm text-[#6f7766]">
                     Our partner support team is here for you.
                   </p>
-                  <ContactSupportDialog />
+                  <ContactSupportButton />
                 </CardContent>
               </Card>
             </>
