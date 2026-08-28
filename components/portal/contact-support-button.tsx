@@ -5,8 +5,9 @@
 // Will, 2026-08-06: "When I press Contact support, it still just pops up with a
 // fake support instead of just taking me to email somebody, which is what I
 // asked for." A ticket form implies a queue with an SLA behind it; there is no
-// such queue. A mailto reaches a real person at tech@favorintl.org, and the
-// partner keeps a copy in their own sent mail.
+// such queue. Mail originally went to tech@favorintl.org while Daniel Casella
+// owned that box. He left August 2026; 2026-08-28 Blandford mail proved the
+// address still hit him. Destination is will@favorintl.org.
 //
 // The subject and body are prefilled with who they are, so the team can find
 // their record without asking.
@@ -15,7 +16,7 @@ import { Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 
-const SUPPORT_EMAIL = 'tech@favorintl.org';
+const SUPPORT_EMAIL = 'will@favorintl.org';
 
 interface ContactSupportButtonProps {
   label?: string;

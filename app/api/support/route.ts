@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     const requesterEmail = created.requesterEmail ?? "";
     try {
       await sendEmail({
-        to: "tech@favorintl.org",
+        to: "will@favorintl.org",
         ...(requesterEmail ? { replyTo: requesterEmail } : {}),
         subject: `Partner support: ${subject}`,
         text: [

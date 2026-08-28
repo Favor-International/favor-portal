@@ -84,9 +84,16 @@ export function RecurringManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { success?: boolean; error?: string };
-      if (!res.ok || !data.success) {
+      const data = (await res.json()) as { success?: boolean; error?: string; status?: string };
+      if (!res.ok || data.success === false) {
         toast.error(data.error ?? 'The change could not be completed');
+        return;
+      }
+      // Blackbaud is the source of truth. If cancel actually terminated,
+      // drop the row now so a stale D1 refresh cannot resurrect it.
+      if (body.action === 'cancel' && data.status === 'Terminated') {
+        setSchedules((prev) => (prev ?? []).filter((s) => s.id !== id));
+        toast.success('Your monthly gift has been cancelled.');
         return;
       }
       toast.success(

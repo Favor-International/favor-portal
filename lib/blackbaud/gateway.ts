@@ -105,7 +105,7 @@ export async function manageRecurringGift(
     method: "POST",
     headers: { Authorization: `Bearer ${cfg.key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ email, gift_id: giftId, ...input }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(25000),
   });
   const data = (await res.json().catch(() => ({}))) as {
     ok?: boolean;
